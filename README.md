@@ -1,4 +1,4 @@
-# 🐉 Draco: Autonomous Cloud Governance Sentinel
+# Draco: Autonomous Cloud Governance Sentinel
 
 **Draco** is an autonomous governance and observability platform designed to watch over your cloud infrastructure like a sentinel. Powered by **Google Gemini AI**, it identifies anomalies, generates remediations, and integrates directly into your GitOps workflow.
 
@@ -18,7 +18,7 @@
 ## 🛠️ Technology Stack
 
 - **Core**: .NET 8 CLI
-- **AI**: Google Gemini Pro
+- **AI**: Google Gemini API
 - **Frontend**: Astro (SSR Mode)
 - **Database**: Neon (Serverless PostgreSQL)
 - **Messaging**: Twilio (SMS), SendGrid (Email)
