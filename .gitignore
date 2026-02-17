@@ -1,0 +1,28 @@
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Build
+bin/
+obj/
+dist/
+node_modules/
+.astro/
+
+# Environment
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# User specific
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,73 @@
+using System.Text;
+using System.Text.Json;
+using Draco.Application.Interfaces;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+
+namespace Draco.Infrastructure.Services;
+
+public class GeminiAIService : IAIService
+{
+    private readonly HttpClient _httpClient;
+    private readonly ILogger<GeminiAIService> _logger;
+    private readonly string _apiKey;
+    private const string ApiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent";
+
+    public GeminiAIService(HttpClient httpClient, ILogger<GeminiAIService> logger, IConfiguration configuration)
+    {
+        _httpClient = httpClient;
+        _logger = logger;
+        _apiKey = configuration["Gemini:ApiKey"] ?? configuration["GOOGLE_GEMINI_API_KEY"] ?? "KEY";
+    }
+
+    public async Task<string> AnalyzeAnomalyAsync(string rawData, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Analyzing cloud data with Gemini...");
+        var prompt = $"Analyze the following cloud resource data and identify any cost anomalies or security risks. Redact any PII. Data: {rawData}";
+        return await CallGeminiAsync(prompt, cancellationToken);
+    }
+
+    public async Task<string> GenerateRemediationHclAsync(string context, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Generating Terraform remediation for context: {Context}", context);
+        var prompt = $"Given this cloud anomaly: {context}, generate a valid and safe Terraform HCL snippet to remediate the issue. Output ONLY the HCL.";
+        return await CallGeminiAsync(prompt, cancellationToken);
+    }
+
+    public async Task<string> CreateConversationalAlertAsync(string analysis, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Creating natural language alert for analysis.");
+        var prompt = $"Translate this technical cloud analysis into a concise, professional message for a sentinel to send via SMS: {analysis}";
+        return await CallGeminiAsync(prompt, cancellationToken);
+    }
+
+    private async Task<string> CallGeminiAsync(string prompt, CancellationToken cancellationToken)
+    {
+        var requestBody = new
+        {
+            contents = new[]
+            {
+                new { parts = new[] { new { text = prompt } } }
+            }
+        };
+
+        var content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
+        var response = await _httpClient.PostAsync($"{ApiUrl}?key={_apiKey}", content, cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var error = await response.Content.ReadAsStringAsync(cancellationToken);
+            _logger.LogError("Gemini API call failed: {Error}", error);
+            return "Analysis failed.";
+        }
+
+        var result = await response.Content.ReadAsStringAsync(cancellationToken);
+        using var doc = JsonDocument.Parse(result);
+        return doc.RootElement
+            .GetProperty("candidates")[0]
+            .GetProperty("content")
+            .GetProperty("parts")[0]
+            .GetProperty("text")
+            .GetString() ?? "No analysis provided.";
+    }
+}

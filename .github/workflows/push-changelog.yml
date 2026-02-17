@@ -1,0 +1,30 @@
+name: Sync Changelogs to Neon
+
+on:
+    push:
+        paths:
+            - "src/Draco.Web/public/changelogs/**"
+    workflow_dispatch: # Allow manual trigger
+
+jobs:
+    sync:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout Code
+              uses: actions/checkout@v4
+
+            - name: Setup Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: "20"
+
+            - name: Install Dependencies
+              run: |
+                  cd src/Draco.Web
+                  npm install postgres
+
+            - name: Run Sync Script
+              env:
+                  DATABASE_URL: ${{ secrets.DATABASE_URL }}
+              run: |
+                  node src/Draco.Web/scripts/sync-changelogs.js
