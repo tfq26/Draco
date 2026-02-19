@@ -10,6 +10,7 @@ public class DracoDbContext : DbContext
     }
 
     public DbSet<CloudResource> CloudResources => Set<CloudResource>();
+    public DbSet<RemediationAudit> RemediationAudits => Set<RemediationAudit>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -22,8 +23,12 @@ public class DracoDbContext : DbContext
             entity.HasIndex(e => e.Provider);
             entity.HasIndex(e => e.Type);
             
-            // Map Tags to JSON for easier querying if needed, or stick to simple formatting
-            // For now, we'll store tags as a simple dictionary that EF can handle with JSON support in Postgres
+            // Map Tags to JSON string for Postgres compatibility
+            entity.Property(e => e.Tags)
+                .HasConversion(
+                    v => System.Text.Json.JsonSerializer.Serialize(v, (System.Text.Json.JsonSerializerOptions?)null),
+                    v => System.Text.Json.JsonSerializer.Deserialize<IDictionary<string, string>>(v, (System.Text.Json.JsonSerializerOptions?)null) ?? new Dictionary<string, string>()
+                );
         });
         
         // Ensure pgvector extension is enabled

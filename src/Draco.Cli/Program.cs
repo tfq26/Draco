@@ -229,7 +229,8 @@ void ConfigureServices(IServiceCollection services, IConfiguration configuration
     });
 
     // Configuration - Pull from appsettings.json or environment variables
-    var connectionString = configuration.GetConnectionString("DracoDbContext") 
+    var connectionString = configuration["DRACO_DB_MAIN_CONNECTION"]
+                           ?? configuration.GetConnectionString("DracoDbContext") 
                            ?? configuration["DRACO_DB_CONNECTION"] 
                            ?? "Host=localhost;Database=draco;Username=postgres;Password=postgres";
 
