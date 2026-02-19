@@ -1,0 +1,77 @@
+{
+    "version": "1.0.0",
+    "releaseDate": "February 17, 2026",
+    "title": "Project Draco Launch",
+    "description": "The official launch of Draco: Autonomous Cloud Governance. This release establishes the core infrastructure, AI sentinel logic, and the central governance web portal.",
+    "highlights": [
+        "Autonomous AI-Driven Cloud Scanning",
+        "Multi-Channel Sentinel Notifications",
+        "Secure GitOps Remediation Workflow",
+        "Premium L-Drago Web Portal",
+        "Zero-Data-Collection Architecture"
+    ],
+    "sections": [
+        {
+            "category": "Architecture",
+            "items": [
+                {
+                    "title": "Unified Configuration System",
+                    "description": "Implemented a robust, hierarchical configuration system.",
+                    "details": [
+                        "Support for appsettings.json for defaults",
+                        "Full .env file support for secret management",
+                        "Environment variable overrides for production parity",
+                        "Hierarchical structure for Twilio, SendGrid, and Gemini keys"
+                    ]
+                },
+                {
+                    "title": "Self-Hosted Persistence",
+                    "description": "Secure database architecture using Neon and PostgreSQL.",
+                    "details": [
+                        "Vector-enabled database schema for AI context storage",
+                        "Entity Framework Core integration with Npgsql",
+                        "Privacy-first local processing for anomaly detection"
+                    ]
+                }
+            ]
+        },
+        {
+            "category": "Web Portal",
+            "items": [
+                {
+                    "title": "Astro Documentation Engine",
+                    "description": "A high-performance hub for project resources and legal policies.",
+                    "details": [
+                        "Server-Side Rendering (SSR) for dynamic database fetching",
+                        "Markdown-based Legal Content Collections (TOS & Privacy)",
+                        "L-Drago Design System with Obsidian Black and Pure Spirit White themes",
+                        "Integrated versioned changelog system"
+                    ]
+                }
+            ]
+        },
+        {
+            "category": "Sentinel Logic",
+            "items": [
+                {
+                    "title": "Gemini AI Core",
+                    "description": "Automated reasoning for cloud infrastructure anomalies.",
+                    "details": [
+                        "Natural language analysis of cloud resource snapshots",
+                        "Automated Terraform HCL generation for remediations",
+                        "Privacy redaction for PII before AI processing"
+                    ]
+                },
+                {
+                    "title": "Multi-Channel Alerts",
+                    "description": "Real-time notifications via Twilio and SendGrid.",
+                    "details": [
+                        "Interactive SMS approvals for automated fixes",
+                        "Detailed email reports for governance compliance",
+                        "Natural language alert translation via Gemini"
+                    ]
+                }
+            ]
+        }
+    ]
+}

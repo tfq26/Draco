@@ -1,0 +1,35 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="Autonomous Cloud Governance">
+	<main>
+    <section class="hero">
+      <h1>Cloud Governance on <span style="color: var(--dragon-red);">Autopilot</span></h1>
+      <p>The open-source sentinel that watches your cloud and fixes issues before they hit your apps.</p>
+      <div class="hero-actions">
+        <a href="https://github.com/tfq26/Draco" class="btn">View on GitHub</a>
+      </div>
+    </section>
+
+    <div class="container">
+      <section id="features" class="card">
+        <h2 style="margin-bottom: 2rem; font-size: 2rem; color: var(--text-color);">Why Draco?</h2>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 2rem;">
+          <div>
+            <h3 class="feature-title">AI-Powered</h3>
+            <p>Leverages Google Gemini to analyze infrastructure metadata and provide human-readable remediation.</p>
+          </div>
+          <div>
+            <h3 class="feature-title">GitOps Driven</h3>
+            <p>Automatically opens Pull Requests to fix misconfigurations. You review, you approve, it deploys.</p>
+          </div>
+          <div>
+            <h3 class="feature-title">Privacy First</h3>
+            <p>Self-hosted architecture. We never see your data. Your clouds, your keys, your control.</p>
+          </div>
+        </div>
+      </section>
+    </div>
+	</main>
+</Layout>
