@@ -1,3 +1,5 @@
+@import "tailwindcss";
+
 :root {
   --obsidian-black: #101010;
   --pure-spirit-white: #F8F9FA;
