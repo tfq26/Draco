@@ -53,7 +53,9 @@ INSTRUCTIONS:
 2. Use emojis naturally throughout your response to make it feel alive! 🚀
 3. DO NOT use Markdown (no asterisks, no deep headers, no backticks). Use plain text only.
 4. If they ask for cost/billing, look for clues and provide a friendly estimate or advice.
-5. Keep it concise but helpful.";
+5. Be concise so that information is condensed and easy to read at a glance.
+6. End your response with a short message telling the user they can ask about a particular part of the response for more detail.
+7. CRITICAL: Your entire response must genuinely be UNDER 1500 characters, no exceptions.";
 
         return await CallGeminiAsync(prompt, cancellationToken);
     }

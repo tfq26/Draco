@@ -53,6 +53,11 @@ public class TwilioService : IMessagingService
             var formattedTo = to.StartsWith("whatsapp:") ? to : $"whatsapp:{to}";
             var formattedFrom = _whatsappFromNumber.StartsWith("whatsapp:") ? _whatsappFromNumber : $"whatsapp:{_whatsappFromNumber}";
 
+            if (message.Length > 1550)
+            {
+                message = message.Substring(0, 1550) + "...\n\n[Message truncated due to length limitations. Please ask for details on a specific section!]";
+            }
+
             await MessageResource.CreateAsync(
                 body: message,
                 from: new Twilio.Types.PhoneNumber(formattedFrom),
