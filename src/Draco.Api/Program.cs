@@ -95,6 +95,65 @@ app.MapPost("/api/webhook/twilio", async (
         return Results.Ok();
     }
 
+    // Handle Draco Help Command
+    if (body.Equals("Draco help", StringComparison.OrdinalIgnoreCase) || body.Equals("help", StringComparison.OrdinalIgnoreCase))
+    {
+        var helpMsg = "Here are some things you can ask me:\n" +
+                      "• 'What are my current resources?'\n" +
+                      "• 'Am I over-provisioned anywhere?'\n" +
+                      "• 'How much am I spending?'\n" +
+                      "• 'Remediate my last warning'\n\n" +
+                      "Just chat with me naturally! 🐉";
+        if (from.StartsWith("whatsapp:")) await messagingService.SendWhatsAppMessageAsync(from, helpMsg); else await messagingService.SendMessageAsync(from, helpMsg);
+        return Results.Ok();
+    }
+
+    // Handle Easter Eggs
+    if (body.Equals("Ryuga", StringComparison.OrdinalIgnoreCase))
+    {
+        var quotes = new[]
+        {
+            "In the end you're nothing but a caged bird. Thinking you've become stronger from the pet food you were given and believing you can defeat the Dragon Emperor. It's just hilarious.",
+            "You say you want to borrow my strength?! Give me a call when you have something to offer me in return.",
+            "I will not loose. Even if my opponent is a god, I will defeat anyone who stands in my way. My name is Ryuga, and I reign over the world as the Strongest, The Dragon Emperor, Do you hear me?",
+            "Be careful what you poke with a stick, it just might bite you!",
+            "Nonsense! This so called \"Hades\" you saw was nothing compared to what I have gone to letting into the world! A complete utter darkness.",
+            "The more you resist, the more it will control you. You cannot fight it trust me. You must become one with it understand?"
+        };
+        var randomQuote = quotes[new Random().Next(quotes.Length)];
+        if (from.StartsWith("whatsapp:")) await messagingService.SendWhatsAppMessageAsync(from, randomQuote); else await messagingService.SendMessageAsync(from, randomQuote);
+        return Results.Ok();
+    }
+
+    if (body.Equals("Dragon Emperor Soaring Bite Strike", StringComparison.OrdinalIgnoreCase) || 
+        body.Equals("Dragon Emperor Soaring Destruction", StringComparison.OrdinalIgnoreCase))
+    {
+        var msg = "1. Gingka Hagane, Yu Tendo, Ryo Hagane, Dark Nebula, Hikaru Hasama, Kyoya Tategami";
+        if (from.StartsWith("whatsapp:")) await messagingService.SendWhatsAppMessageAsync(from, msg); else await messagingService.SendMessageAsync(from, msg);
+        return Results.Ok();
+    }
+
+    if (body.Equals("Dragon Emperor Supreme Flight", StringComparison.OrdinalIgnoreCase))
+    {
+        var msg = "2. Jack, Dr. Ziggurat, Julian, Hades. Inc\n3. Tsubasa Otori, King, Kenta Yumiya, Gingka Hagane, Chris, Kyoya Tategami, Yuki Mizusawa";
+        if (from.StartsWith("whatsapp:")) await messagingService.SendWhatsAppMessageAsync(from, msg); else await messagingService.SendMessageAsync(from, msg);
+        return Results.Ok();
+    }
+
+    if (body.Equals("Dragon Emperor Life Destructor", StringComparison.OrdinalIgnoreCase))
+    {
+        var msg = "3. Tsubasa Otori, King, Kenta Yumiya, Gingka Hagane, Chris, Kyoya Tategami, Yuki Mizusawa";
+        if (from.StartsWith("whatsapp:")) await messagingService.SendWhatsAppMessageAsync(from, msg); else await messagingService.SendMessageAsync(from, msg);
+        return Results.Ok();
+    }
+
+    if (body.Equals("nemesis", StringComparison.OrdinalIgnoreCase))
+    {
+        var msg = "I will not loose. Even if my opponent is a god, I will defeat anyone who stands in my way. My name is Ryuga, and I reign over the world as the Strongest, The Dragon Emperor, Do you hear me? ULTIMATE MOVE: DRAGON EMPEROR LIFE DESTRUCTOR.";
+        if (from.StartsWith("whatsapp:")) await messagingService.SendWhatsAppMessageAsync(from, msg); else await messagingService.SendMessageAsync(from, msg);
+        return Results.Ok();
+    }
+
     // Handle General Query with AI
     try 
     {
