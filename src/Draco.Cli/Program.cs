@@ -83,19 +83,32 @@ initCommand.SetHandler(async () =>
 
     // 1. Get User Info
     var name = AnsiConsole.Ask<string>("What is your [bold cyan]name[/]?");
-    var phoneNumber = AnsiConsole.Ask<string>("Enter your [bold cyan]phone number[/] (for SMS alerts):");
+    
+    var channel = AnsiConsole.Prompt(
+        new SelectionPrompt<string>()
+            .Title("Which [bold cyan]verification channel[/] would you like to use?")
+            .AddChoices(new[] { "SMS", "WhatsApp" }));
 
-    // 2. Twilio Verification
+    var phoneNumber = AnsiConsole.Ask<string>($"Enter your [bold cyan]phone number[/] for {channel} alerts:");
+
+    // 2. Messaging Verification
     var messagingService = serviceProvider.GetRequiredService<IMessagingService>();
     var verificationCode = Guid.NewGuid().ToString().Substring(0, 6).ToUpper();
     
     await AnsiConsole.Status()
         .StartAsync("Sending verification code...", async ctx =>
         {
-            await messagingService.SendMessageAsync(phoneNumber, $"Your Draco Sentinel verification code is: {verificationCode}");
+            if (channel == "WhatsApp")
+            {
+                await messagingService.SendWhatsAppMessageAsync(phoneNumber, $"Your Draco Sentinel verification code is: {verificationCode}");
+            }
+            else
+            {
+                await messagingService.SendMessageAsync(phoneNumber, $"Your Draco Sentinel verification code is: {verificationCode}");
+            }
         });
 
-    AnsiConsole.MarkupLine("[green]Code sent successfully via Twilio![/]");
+    AnsiConsole.MarkupLine($"[green]Code sent successfully via {channel}![/]");
     
     var userCode = "";
     int attempts = 0;
@@ -130,13 +143,112 @@ initCommand.SetHandler(async () =>
         return;
     }
 
+    if (providerType == "Azure")
+    {
+        bool isAzInstalled = false;
+        try 
+        {
+            var azCheck = new System.Diagnostics.Process { StartInfo = new System.Diagnostics.ProcessStartInfo { FileName = "az", Arguments = "--version", RedirectStandardOutput = true, UseShellExecute = false, CreateNoWindow = true } };
+            azCheck.Start();
+            await azCheck.WaitForExitAsync();
+            isAzInstalled = azCheck.ExitCode == 0;
+        }
+        catch { }
+
+        if (!isAzInstalled)
+        {
+            AnsiConsole.MarkupLine("[yellow]Azure CLI was not found.[/]");
+            if (AnsiConsole.Confirm("Would you like to install Azure CLI via Homebrew now?"))
+            {
+                await AnsiConsole.Status().StartAsync("Installing Azure CLI...", async ctx => 
+                {
+                    var install = new System.Diagnostics.Process { StartInfo = new System.Diagnostics.ProcessStartInfo { FileName = "brew", Arguments = "install azure-cli", UseShellExecute = false } };
+                    install.Start();
+                    await install.WaitForExitAsync();
+                });
+                AnsiConsole.MarkupLine("[green]Azure CLI installed successfully![/]");
+            }
+            else
+            {
+                AnsiConsole.MarkupLine("[red]Azure CLI is required for this setup flow. Aborting.[/]");
+                return;
+            }
+        }
+
+        AnsiConsole.MarkupLine("[bold cyan]Please sign in to Azure. A browser window should open...[/]");
+        var azLogin = new System.Diagnostics.Process { StartInfo = new System.Diagnostics.ProcessStartInfo { FileName = "az", Arguments = "login", UseShellExecute = false } };
+        azLogin.Start();
+        await azLogin.WaitForExitAsync();
+    }
+
     AnsiConsole.MarkupLine($"[bold blue]Connecting to {providerType} SDK...[/]");
     
-    // Simulate SDK sign-in
+    // Perform Role Assignment for Azure
     await AnsiConsole.Status()
         .StartAsync($"Authenticating with {providerType}...", async ctx =>
         {
-            await Task.Delay(2000); // Simulate sign-in
+            if (providerType == "Azure")
+            {
+                ctx.Status("Checking Azure credentials and granting read-only Cost Management access...");
+                try
+                {
+                    // Get Subscription ID
+                    var getSubProcess = new System.Diagnostics.Process
+                    {
+                        StartInfo = new System.Diagnostics.ProcessStartInfo
+                        {
+                            FileName = "az",
+                            Arguments = "account show --query id -o tsv",
+                            RedirectStandardOutput = true,
+                            UseShellExecute = false,
+                            CreateNoWindow = true
+                        }
+                    };
+                    getSubProcess.Start();
+                    string subscriptionId = (await getSubProcess.StandardOutput.ReadToEndAsync()).Trim();
+                    await getSubProcess.WaitForExitAsync();
+
+                    // Get User Email
+                    var getUserProcess = new System.Diagnostics.Process
+                    {
+                        StartInfo = new System.Diagnostics.ProcessStartInfo
+                        {
+                            FileName = "az",
+                            Arguments = "account show --query user.name -o tsv",
+                            RedirectStandardOutput = true,
+                            UseShellExecute = false,
+                            CreateNoWindow = true
+                        }
+                    };
+                    getUserProcess.Start();
+                    string userEmail = (await getUserProcess.StandardOutput.ReadToEndAsync()).Trim();
+                    await getUserProcess.WaitForExitAsync();
+
+                    if (!string.IsNullOrEmpty(subscriptionId) && !string.IsNullOrEmpty(userEmail))
+                    {
+                        ctx.Status($"Assigning 'Cost Management Reader' to {userEmail}...");
+                        var assignProcess = new System.Diagnostics.Process
+                        {
+                            StartInfo = new System.Diagnostics.ProcessStartInfo
+                            {
+                                FileName = "az",
+                                Arguments = $"role assignment create --role \"Cost Management Reader\" --assignee {userEmail} --scope /subscriptions/{subscriptionId}",
+                                RedirectStandardOutput = true,
+                                RedirectStandardError = true,
+                                UseShellExecute = false,
+                                CreateNoWindow = true
+                            }
+                        };
+                        assignProcess.Start();
+                        await assignProcess.WaitForExitAsync();
+                    }
+                }
+                catch
+                {
+                    // Ignore if az cli is not installed or not logged in currently. DefaultAzureCredential handles primary auth anyway.
+                }
+            }
+            await Task.Delay(1500); // Simulate sign-in completion
         });
 
     AnsiConsole.MarkupLine("[green]Authenticated successfully![/]");

@@ -14,6 +14,7 @@ public class TwilioService : IMessagingService
     private readonly string _accountSid;
     private readonly string _authToken;
     private readonly string _fromNumber;
+    private readonly string _whatsappFromNumber;
 
     public TwilioService(ILogger<TwilioService> logger, IConfiguration configuration)
     {
@@ -21,6 +22,7 @@ public class TwilioService : IMessagingService
         _accountSid = (configuration["Twilio:AccountSid"] ?? configuration["TWILIO_ACCOUNT_SID"] ?? "AC123").Trim();
         _authToken = (configuration["Twilio:AuthToken"] ?? configuration["TWILIO_AUTH_TOKEN"] ?? "token").Trim();
         _fromNumber = (configuration["Twilio:FromNumber"] ?? configuration["TWILIO_FROM_NUMBER"] ?? "+123456789").Trim();
+        _whatsappFromNumber = (configuration["Twilio:WhatsAppNumber"] ?? configuration["TWILIO_WHATSAPP_NUMBER"] ?? "whatsapp:+14155238886").Trim();
         
         TwilioClient.Init(_accountSid, _authToken);
     }
@@ -40,6 +42,27 @@ public class TwilioService : IMessagingService
         {
             _logger.LogError(ex, "Failed to send SMS to {To}.", to);
             throw; // Re-throw so the UI knows it failed
+        }
+    }
+
+    public async Task SendWhatsAppMessageAsync(string to, string message, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Sending WhatsApp to {To} via Twilio.", to);
+        try
+        {
+            var formattedTo = to.StartsWith("whatsapp:") ? to : $"whatsapp:{to}";
+            var formattedFrom = _whatsappFromNumber.StartsWith("whatsapp:") ? _whatsappFromNumber : $"whatsapp:{_whatsappFromNumber}";
+
+            await MessageResource.CreateAsync(
+                body: message,
+                from: new Twilio.Types.PhoneNumber(formattedFrom),
+                to: new Twilio.Types.PhoneNumber(formattedTo)
+            );
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to send WhatsApp to {To}.", to);
+            throw;
         }
     }
 }

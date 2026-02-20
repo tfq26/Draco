@@ -1,0 +1,422 @@
+[36m--- Starting Draco Autonomous Sentinel System ---[0m
+
+[0m[6:22:14 PM] [System][0m Cleaning up port 5020...
+[35m[6:22:14 PM] [Ngrok][0m Launching tunnel...
+[32m[6:22:14 PM] [CLI][0m Initializing monitoring loop...
+[36m[6:22:14 PM] [API][0m Using launch settings from /Users/taufeeqali/Projects/Draco/src/Draco.Api/Properties/launchSettings.json...
+[36m[6:22:14 PM] [API][0m 
+[36m[6:22:14 PM] [API][0m Building...
+[36m[6:22:15 PM] [API][0m /Users/taufeeqali/Projects/Draco/src/Draco.Api/Program.cs(57,89): warning CS1998: This async method lacks 'await' operators and will run synchronously. Consider using the 'await' operator to await non-blocking API calls, or 'await Task.Run(...)' to do CPU-bound work on a background thread. [/Users/taufeeqali/Projects/Draco/src/Draco.Api/Draco.Api.csproj]
+[32m[6:22:16 PM] [CLI][0m [38;5;12m  ____                                [0m
+[38;5;12m |  _ \   _ __    __ _    ___    ___  [0m
+[38;5;12m | | | | | '__|  / _` |  / __|  / _ \ [0m
+[38;5;12m | |_| | | |    | (_| | | (__  | (_) |[0m
+[38;5;12m |____/  |_|     \__,_|  \___|  \___/ [0m
+[38;5;12m                                      [0m
+[32m[6:22:16 PM] [CLI][0m warn: Microsoft.EntityFrameworkCore.Model.Validation[10620]
+      The property 'CloudResource.Tags' is a collection or enumeration type with a value converter but with no value comparer. Set a value comparer to ensure the collection/enumeration elements are compared correctly.
+[36m[6:22:16 PM] [API][0m warn: Microsoft.EntityFrameworkCore.Model.Validation[10620]
+      The property 'CloudResource.Tags' is a collection or enumeration type with a value converter but with no value comparer. Set a value comparer to ensure the collection/enumeration elements are compared correctly.
+
+[35m==========================================[0m
+[35m LIVE WEBHOOK URL: https://2a94-129-110-242-94.ngrok-free.app/api/webhook/twilio [0m
+[35m==========================================[0m
+
+[32m[6:22:17 PM] [CLI][0m info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (126ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      SELECT CASE WHEN COUNT(*) = 0 THEN FALSE ELSE TRUE END
+      FROM pg_class AS cls
+      JOIN pg_namespace AS ns ON ns.oid = cls.relnamespace
+      WHERE
+              cls.relkind IN ('r', 'v', 'm', 'f', 'p') AND
+              ns.nspname NOT IN ('pg_catalog', 'information_schema') AND
+              -- Exclude tables which are members of PG extensions
+              NOT EXISTS (
+                  SELECT 1 FROM pg_depend WHERE
+                      classid=(
+                          SELECT cls.oid
+                          FROM pg_class AS cls
+                                   JOIN pg_namespace AS ns ON ns.oid = cls.relnamespace
+                          WHERE relname='pg_class' AND ns.nspname='pg_catalog'
+                      ) AND
+                      objid=cls.oid AND
+                      deptype IN ('e', 'x')
+              )
+[32m[6:22:17 PM] [CLI][0m [1;38;5;12mSentinel initialized.[0m Starting monitoring loop...
+[32m[6:22:17 PM] [CLI][0m info: Draco.Cli.TwilioWebhookListener[0]
+      Twilio Webhook Listener started on port http://*:8080/webhook/twilio/.
+[32m[6:22:17 PM] [CLI][0m info: Draco.Application.Services.ResourceDiscoveryService[0]
+      Starting cross-provider resource discovery...
+[32m[6:22:17 PM] [CLI][0m info: Draco.Application.Services.ResourceDiscoveryService[0]
+      Discovering resources for provider: Azure
+[32m[6:22:17 PM] [CLI][0m info: Draco.Infrastructure.Providers.AzureProvider[0]
+      Starting Azure resource discovery...
+[32m[6:22:17 PM] [CLI][0m Scanning cloud resources...
+[36m[6:22:17 PM] [API][0m info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (63ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      SELECT CASE WHEN COUNT(*) = 0 THEN FALSE ELSE TRUE END
+      FROM pg_class AS cls
+      JOIN pg_namespace AS ns ON ns.oid = cls.relnamespace
+      WHERE
+              cls.relkind IN ('r', 'v', 'm', 'f', 'p') AND
+              ns.nspname NOT IN ('pg_catalog', 'information_schema') AND
+              -- Exclude tables which are members of PG extensions
+              NOT EXISTS (
+                  SELECT 1 FROM pg_depend WHERE
+                      classid=(
+                          SELECT cls.oid
+                          FROM pg_class AS cls
+                                   JOIN pg_namespace AS ns ON ns.oid = cls.relnamespace
+                          WHERE relname='pg_class' AND ns.nspname='pg_catalog'
+                      ) AND
+                      objid=cls.oid AND
+                      deptype IN ('e', 'x')
+              )
+[36m[6:22:17 PM] [API][0m info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://localhost:5020
+[36m[6:22:17 PM] [API][0m info: Microsoft.Hosting.Lifetime[0]
+      Application started. Press Ctrl+C to shut down.
+[36m[6:22:17 PM] [API][0m info: Microsoft.Hosting.Lifetime[0]
+      Hosting environment: Development
+info: Microsoft.Hosting.Lifetime[0]
+      Content root path: /Users/taufeeqali/Projects/Draco/src/Draco.Api
+[32m[6:22:19 PM] [CLI][0m info: Draco.Infrastructure.Providers.AzureProvider[0]
+      Discovered 34 resources in Azure.
+info: Draco.Application.Services.ResourceDiscoveryService[0]
+      Upserting 34 resources from Azure into repository.
+[32m[6:22:19 PM] [CLI][0m info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (45ms) [Parameters=[@__resource_Id_0='?'], CommandType='Text', CommandTimeout='30']
+      SELECT c."Id", c."DiscoveredAt", c."Location", c."Name", c."Provider", c."RawMetadata", c."ResourceGroupName", c."SubscriptionId", c."Tags", c."Type"
+      FROM "CloudResources" AS c
+      WHERE c."Id" = @__resource_Id_0
+      LIMIT 1
+[32m[6:22:19 PM] [CLI][0m info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (43ms) [Parameters=[@__resource_Id_0='?'], CommandType='Text', CommandTimeout='30']
+      SELECT c."Id", c."DiscoveredAt", c."Location", c."Name", c."Provider", c."RawMetadata", c."ResourceGroupName", c."SubscriptionId", c."Tags", c."Type"
+      FROM "CloudResources" AS c
+      WHERE c."Id" = @__resource_Id_0
+      LIMIT 1
+[32m[6:22:19 PM] [CLI][0m info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (41ms) [Parameters=[@__resource_Id_0='?'], CommandType='Text', CommandTimeout='30']
+      SELECT c."Id", c."DiscoveredAt", c."Location", c."Name", c."Provider", c."RawMetadata", c."ResourceGroupName", c."SubscriptionId", c."Tags", c."Type"
+      FROM "CloudResources" AS c
+      WHERE c."Id" = @__resource_Id_0
+      LIMIT 1
+[32m[6:22:19 PM] [CLI][0m info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (42ms) [Parameters=[@__resource_Id_0='?'], CommandType='Text', CommandTimeout='30']
+      SELECT c."Id", c."DiscoveredAt", c."Location", c."Name", c."Provider", c."RawMetadata", c."ResourceGroupName", c."SubscriptionId", c."Tags", c."Type"
+      FROM "CloudResources" AS c
+      WHERE c."Id" = @__resource_Id_0
+      LIMIT 1
+[32m[6:22:19 PM] [CLI][0m info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (44ms) [Parameters=[@__resource_Id_0='?'], CommandType='Text', CommandTimeout='30']
+      SELECT c."Id", c."DiscoveredAt", c."Location", c."Name", c."Provider", c."RawMetadata", c."ResourceGroupName", c."SubscriptionId", c."Tags", c."Type"
+      FROM "CloudResources" AS c
+      WHERE c."Id" = @__resource_Id_0
+      LIMIT 1
+[32m[6:22:19 PM] [CLI][0m info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (42ms) [Parameters=[@__resource_Id_0='?'], CommandType='Text', CommandTimeout='30']
+      SELECT c."Id", c."DiscoveredAt", c."Location", c."Name", c."Provider", c."RawMetadata", c."ResourceGroupName", c."SubscriptionId", c."Tags", c."Type"
+      FROM "CloudResources" AS c
+      WHERE c."Id" = @__resource_Id_0
+      LIMIT 1
+[32m[6:22:19 PM] [CLI][0m info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (109ms) [Parameters=[@__resource_Id_0='?'], CommandType='Text', CommandTimeout='30']
+      SELECT c."Id", c."DiscoveredAt", c."Location", c."Name", c."Provider", c."RawMetadata", c."ResourceGroupName", c."SubscriptionId", c."Tags", c."Type"
+      FROM "CloudResources" AS c
+      WHERE c."Id" = @__resource_Id_0
+      LIMIT 1
+[32m[6:22:19 PM] [CLI][0m info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (44ms) [Parameters=[@__resource_Id_0='?'], CommandType='Text', CommandTimeout='30']
+      SELECT c."Id", c."DiscoveredAt", c."Location", c."Name", c."Provider", c."RawMetadata", c."ResourceGroupName", c."SubscriptionId", c."Tags", c."Type"
+      FROM "CloudResources" AS c
+      WHERE c."Id" = @__resource_Id_0
+      LIMIT 1
+[32m[6:22:19 PM] [CLI][0m info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (42ms) [Parameters=[@__resource_Id_0='?'], CommandType='Text', CommandTimeout='30']
+      SELECT c."Id", c."DiscoveredAt", c."Location", c."Name", c."Provider", c."RawMetadata", c."ResourceGroupName", c."SubscriptionId", c."Tags", c."Type"
+      FROM "CloudResources" AS c
+      WHERE c."Id" = @__resource_Id_0
+      LIMIT 1
+[32m[6:22:19 PM] [CLI][0m info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (43ms) [Parameters=[@__resource_Id_0='?'], CommandType='Text', CommandTimeout='30']
+      SELECT c."Id", c."DiscoveredAt", c."Location", c."Name", c."Provider", c."RawMeta
+[32m[6:22:19 PM] [CLI][0m data", c."ResourceGroupName", c."SubscriptionId", c."Tags", c."Type"
+      FROM "CloudResources" AS c
+      WHERE c."Id" = @__resource_Id_0
+      LIMIT 1
+[32m[6:22:19 PM] [CLI][0m info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (43ms) [Parameters=[@__resource_Id_0='?'], CommandType='Text', CommandTimeout='30']
+      SELECT c."Id", c."DiscoveredAt", c."Location", c."Name", c."Provider", c."RawMetadata", c."ResourceGroupName", c."SubscriptionId", c."Tags", c."Type"
+      FROM "CloudResources" AS c
+      WHERE c."Id" = @__resource_Id_0
+      LIMIT 1
+[32m[6:22:20 PM] [CLI][0m info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (43ms) [Parameters=[@__resource_Id_0='?'], CommandType='Text', CommandTimeout='30']
+      SELECT c."Id", c."DiscoveredAt", c."Location", c."Name", c."Provider", c."RawMetadata", c."ResourceGroupName", c."SubscriptionId", c."Tags", c."Type"
+      FROM "CloudResources" AS c
+      WHERE c."Id" = @__resource_Id_0
+      LIMIT 1
+[32m[6:22:20 PM] [CLI][0m info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (42ms) [Parameters=[@__resource_Id_0='?'], CommandType='Text', CommandTimeout='30']
+      SELECT c."Id", c."DiscoveredAt", c."Location", c."Name", c."Provider", c."RawMetadata", c."ResourceGroupName", c."SubscriptionId", c."Tags", c."Type"
+      FROM "CloudResources" AS c
+      WHERE c."Id" = @__resource_Id_0
+      LIMIT 1
+[32m[6:22:20 PM] [CLI][0m info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (43ms) [Parameters=[@__resource_Id_0='?'], CommandType='Text', CommandTimeout='30']
+      SELECT c."Id", c."DiscoveredAt", c."Location", c."Name", c."Provider", c."RawMetadata", c."ResourceGroupName", c."SubscriptionId", c."Tags", c."Type"
+      FROM "CloudResources" AS c
+      WHERE c."Id" = @__resource_Id_0
+      LIMIT 1
+[32m[6:22:20 PM] [CLI][0m info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (42ms) [Parameters=[@__resource_Id_0='?'], CommandType='Text', CommandTimeout='30']
+      SELECT c."Id", c."DiscoveredAt", c."Location", c."Name", c."Provider", c."RawMeta
+[32m[6:22:20 PM] [CLI][0m data", c."ResourceGroupName", c."SubscriptionId", c."Tags", c."Type"
+      FROM "CloudResources" AS c
+      WHERE c."Id" = @__resource_Id_0
+      LIMIT 1
+[32m[6:22:20 PM] [CLI][0m info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (50ms) [Parameters=[@__resource_Id_0='?'], CommandType='Text', CommandTimeout='30']
+      SELECT c."Id", c."DiscoveredAt", c."Location", c."Name", c."Provider", c."RawMetadata", c."ResourceGroupName", c."SubscriptionId", c."Tags", c."Type"
+      FROM "CloudResources" AS c
+      WHERE c."Id" = @__resource_Id_0
+      LIMIT 1
+[32m[6:22:20 PM] [CLI][0m info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (127ms) [Parameters=[@__resource_Id_0='?'], CommandType='Text', CommandTimeout='30']
+      SELECT c."Id", c."DiscoveredAt", c."Location", c."Name", c."Provider", c."RawMetadata", c."ResourceGroupName", c."SubscriptionId", c."Tags", c."Type"
+      FROM "CloudResources" AS c
+      WHERE c."Id" = @__resource_Id_0
+      LIMIT 1
+[32m[6:22:20 PM] [CLI][0m info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (45ms) [Parameters=[@__resource_Id_0='?'], CommandType='Text', CommandTimeout='30']
+      SELECT c."Id", c."DiscoveredAt", c."Location", c."Name", c."Provider", c."RawMetadata", c."ResourceGroupName", c."SubscriptionId", c."Tags", c."Type"
+      FROM "CloudResources" AS c
+      WHERE c."Id" = @__resource_Id_0
+      LIMIT 1
+[32m[6:22:20 PM] [CLI][0m info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (50ms) [Parameters=[@__resource_Id_0='?'], CommandType='Text', CommandTimeout='30']
+      SELECT c."Id", c."DiscoveredAt", c."Location", c."Name", c."Provider", c."RawMetadata", c."ResourceGroupName", c."SubscriptionId", c."Tags", c."Type"
+      FROM "CloudResources" AS c
+      WHERE c."Id" = @__resource_Id_0
+      LIMIT 1
+[32m[6:22:20 PM] [CLI][0m info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (44ms) [Parameters=[@__resource_Id_0='?'], CommandType='Text', CommandTimeout='30']
+      SELECT c."Id", c."DiscoveredAt", c."Location", c."Name", c."Provider", c."RawMetadata", c."ResourceGroupName", c."SubscriptionId", c."Tags", c."Type"
+      FROM "CloudResources" AS c
+      WHERE c."Id" = @__resource_Id_0
+      LIMIT 1
+[32m[6:22:20 PM] [CLI][0m info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (46ms) [Parameters=[@__resource_Id_0='?'], CommandType='Text', CommandTimeout='30']
+      SELECT c."Id", c."DiscoveredAt", c."Location", c."Name", c."Provider", c."RawMetadata", c."ResourceGroupName", c."SubscriptionId", c."Tags", c."Type"
+      FROM "CloudResources" AS c
+      WHERE c."Id" = @__resource_Id_0
+      LIMIT 1
+[32m[6:22:20 PM] [CLI][0m info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (42ms) [Parameters=[@__resource_Id_0='?'], CommandType='Text', CommandTimeout='30']
+      SELECT c."Id", c."DiscoveredAt", c."Location", c."Name", c."Provider", c."RawMetadata", c."ResourceGroupName", c."SubscriptionId", c."Tags", c."Type"
+      FROM "CloudResources" AS c
+      WHERE c."Id" = @__resource_Id_0
+      LIMIT 1
+[32m[6:22:20 PM] [CLI][0m info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (44ms) [Parameters=[@__resource_Id_0='?'], CommandType='Text', CommandTimeout='30']
+      SELECT c."Id", c."DiscoveredAt", c."Location", c."Name", c."Provider", c."RawMetadata", c."ResourceGroupName", c."SubscriptionId", c."Tags", c."Type"
+      FROM "CloudResources" AS c
+      WHERE c."Id" = @__resource_Id_0
+      LIMIT 1
+[32m[6:22:20 PM] [CLI][0m info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (42ms) [Parameters=[@__resource_Id_0='?'], CommandType='Text', CommandTimeout='30']
+      SELECT c."Id", c."DiscoveredAt", c."Location", c."Name", c."Provider", c."RawMetadata", c."ResourceGroupName", c."SubscriptionId", c."Tags", c."Type"
+      FROM "CloudResources" AS c
+      WHERE c."Id" = @__resource_Id_0
+      LIMIT 1
+[32m[6:22:20 PM] [CLI][0m info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (41ms) [Parameters=[@__resource_Id_0='?'], CommandType='Text', CommandTimeout='30']
+      SELECT c."Id", c."DiscoveredAt", c."Location", c."Name", c."Provider", c."RawMetadata", c."ResourceGroupName", c."SubscriptionId", c."Tags", c."Type"
+      FROM "CloudResources" AS c
+      WHERE c."Id" = @__resource_Id_0
+      LIMIT 1
+[32m[6:22:20 PM] [CLI][0m info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (43ms) [Parameters=[@__resource_Id_0='?'], CommandType='Text', CommandTimeout='30']
+      SELECT c."Id", c."DiscoveredAt", c."Location", c."Name", c."Provider", c."RawMetadata", c."ResourceGroupName", c."SubscriptionId", c."Tags", c."Type"
+      FROM "CloudResources" AS c
+      WHERE c."Id" = @__resource_Id_0
+      LIMIT 1
+[32m[6:22:20 PM] [CLI][0m info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (121ms) [Parameters=[@__resource_Id_0='?'], CommandType='Text', CommandTimeout='30']
+      SELECT c."Id", c."DiscoveredAt", c."Location", c."Name", c."Provider", c."RawMetadata", c."ResourceGroupName", c."SubscriptionId", c."Tags", c."Type"
+      FROM "CloudResources" AS c
+      WHERE c."Id" = @__resource_Id_0
+      LIMIT 1
+[32m[6:22:20 PM] [CLI][0m info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (42ms) [Parameters=[@__resource_Id_0='?'], CommandType='Text', CommandTimeout='30']
+      SELECT c."Id", c."DiscoveredAt", c."Location", c."Name", c."Provider", c."RawMetadata", c."ResourceGroupName", c."SubscriptionId", c."Tags", c."Type"
+      FROM "CloudResources" AS c
+      WHERE c."Id" = @__resource_Id_0
+      LIMIT 1
+[32m[6:22:20 PM] [CLI][0m info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (44ms) [Parameters=[@__resource_Id_0='?'], CommandType='Text', CommandTimeout='30']
+      SELECT c."Id", c."DiscoveredAt", c."Location", c."Name", c."Provider", c."RawMetadata", c."ResourceGroupName", c."SubscriptionId", c."Tags", c."Type"
+      FROM "CloudResources" AS c
+      WHERE c."Id" = @__resource_Id_0
+      LIMIT 1
+[32m[6:22:20 PM] [CLI][0m info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (43ms) [Parameters=[@__resource_Id_0='?'], CommandType='Text', CommandTimeout='30']
+      SELECT c."Id", c."DiscoveredAt", c."Location", c."Name", c."Provider", c."RawMetadata", c."ResourceGroupName", c."SubscriptionId", c."Tags", c."Type"
+      FROM "CloudResources" AS c
+      WHERE c."Id" = @__resource_Id_0
+      LIMIT 1
+[32m[6:22:21 PM] [CLI][0m info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (42ms) [Parameters=[@__resource_Id_0='?'], CommandType='Text', CommandTimeout='30']
+      SELECT c."Id", c."DiscoveredAt", c."Location", c."Name", c."Provider", c."RawMetadata", c."ResourceGroupName", c."SubscriptionId", c."Tags", c."Type"
+      FROM "CloudResources" AS c
+      WHERE c."Id" = @__resource_Id_0
+      LIMIT 1
+[32m[6:22:21 PM] [CLI][0m info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (44ms) [Parameters=[@__resource_Id_0='?'], CommandType='Text', CommandTimeout='30']
+      SELECT c."Id", c."DiscoveredAt", c."Location", c."Name", c."Provider", c."RawMetadata", c."ResourceGroupName", c."SubscriptionId", c."Tags", c."Type"
+      FROM "CloudResources" AS c
+      WHERE c."Id" = @__resource_Id_0
+      LIMIT 1
+[32m[6:22:21 PM] [CLI][0m info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (43ms) [Parameters=[@__resource_Id_0='?'], CommandType='Text', CommandTimeout='30']
+      SELECT c."Id", c."DiscoveredAt", c."Location", c."Name", c."Provider", c."RawMetadata", c."ResourceGroupName", c."SubscriptionId", c."Tags", c."Type"
+      FROM "CloudResources" AS c
+      WHERE c."Id" = @__resource_Id_0
+      LIMIT 1
+[32m[6:22:21 PM] [CLI][0m info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (43ms) [Parameters=[@__resource_Id_0='?'], CommandType='Text', CommandTimeout='30']
+      SELECT c."Id", c."DiscoveredAt", c."Location", c."Name", c."Provider", c."RawMetadata", c."ResourceGroupName", c."SubscriptionId", c."Tags", c."Type"
+      FROM "CloudResources" AS c
+      WHERE c."Id" = @__resource_Id_0
+      LIMIT 1
+[32m[6:22:21 PM] [CLI][0m info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (86ms) [Parameters=[@p2='?', @p0='?' (DbType = DateTime), @p1='?', @p5='?', @p3='?' (DbType = DateTime), @p4='?', @p8='?', @p6='?' (DbType = DateTime), @p7='?', @p11='?', @p9='?' (DbType = DateTime), @p10='?', @p14='?', @p12='?' (DbType = DateTime), @p13='?', @p17='?', @p15='?' (DbType = DateTime), @p16='?', @p20='?', @p18='?' (DbType = DateTime), @p19='?', @p23='?', @p21='?' (DbType = DateTime), @p22='?', @p26='?', @p24='?' (DbType = DateTime), @p25='?', @p29='?', @p27='?' (DbType = DateTime), @p28='?', @p32='?', @p30='?' (DbType = DateTime), @p31='?', @p35='?', @p33='?' (DbType = DateTime), @p34='?', @p38='?', @p36='?' (DbType = DateTime), @p37='?', @p41='?', @p39='?' (DbType = DateTime), @p40='?', @p44='?', @p42='?' (DbType = DateTime), @p43='?', @p47='?', @p45='?' (DbType = DateTime), @p46='?', @p50='?', @p48='?' (DbType = DateTime), @p49='?', @p53='?', @p51='?' (DbType = DateTime), @p52='?', @p56='?', @p54='?' (DbType = DateTime), @p55='?', @p59='?', @p57='?' (DbType = DateTime), @p58='?', @p62='?', @p60='?' (DbType = DateTime), @p61='?', @p65='?', @p63='?' (DbType = DateTime), @p64='?', @p68='?', @p66='?' (DbType = DateTime), @p67='?', @p71='?', @p69='?' (DbType = DateTime), @p70='?', @p74='?', @p72='?' (DbType = DateTime), @p73='?', @p77='?', @p75='?' (DbType = DateTime), @p76='?', @p80='?', @p78='?' (DbType = DateTime), @p79='?', @p83='?', @p81='?' (DbType = DateTime), @p82='?', @p86='?', @p84='?' (DbType = DateTime), @p85='?', @p89='?', @p87='?' (DbType = DateTime), @p88='?', @p92='?', @p90='?' (DbType = DateTime), @p91='?', @p95='?', @p93='?' (DbType = DateTime), @p94='?', @p98='?', @p96='?' (DbType = DateTime), @p97='?', @p101='?', @p99='?' (DbType = DateTime), @p100='?'], CommandType='Text', CommandTimeout='30']
+      UPDATE "CloudResources" SET "DiscoveredAt" = @p0, "Tags" = @p1
+      WHERE "Id" = @p2;
+      UPDATE "CloudResources" SET "DiscoveredAt" = @p3, "Tags" = @p4
+      WHERE "Id" = @p5;
+      UPDATE "CloudResources" SET "DiscoveredAt" = @p6, "Tags" = @p7
+      WHERE "Id" = @p8;
+      UPDATE "CloudResources" SET "DiscoveredAt" = @p9, "Tags" = @p10
+      WHERE "Id" = @p11;
+      UPDATE "CloudResources" SET "DiscoveredAt" = @p12, "Tags" = @p13
+      WHERE "Id" = @p14;
+      UPDATE "CloudResources" SET "DiscoveredAt" = @p15, "Tags" = @p16
+      WHERE "Id" = @p17;
+      UPDATE "CloudResources" SET "DiscoveredAt" = @p18, "Tags" = @p19
+      WHERE "Id" = @p20;
+      UPDATE "CloudResources" SET "DiscoveredAt" = @p21, "Tags" = @p22
+      WHERE "Id" = @p23;
+      UPDATE "CloudResources" SET "DiscoveredAt" = @p24, "Tags" = @p25
+      WHERE "Id" = @p26;
+      UPDATE "CloudResources" SET "DiscoveredAt" = @p27, "Tags" = @p28
+      WHERE "Id" = @p29;
+      UPDATE "CloudResources" SET "DiscoveredAt" = @p30, "Tags" = @p31
+      WHERE "Id" = @p32;
+      UPDATE "CloudResources" SET "DiscoveredAt" = @p33, "Tags" = @p34
+      WHERE "Id" = @p35;
+      UPDATE "CloudResources" SET "DiscoveredAt" = @p36, "Tags" = @p37
+      WHERE "Id" = @p38;
+      UPDATE "CloudResources" SET "DiscoveredAt" = @p39, "Tags" = @p40
+      WHERE "Id" = @p41;
+      UPDATE "CloudResources" SET "DiscoveredAt" = @p42, "Tags" = @p43
+      WHERE "Id" = @p44;
+      UPDATE "CloudResources" SET "DiscoveredAt" = @p45, "Tags" = @p46
+      WHERE "Id" = @p47;
+      UPDATE "CloudResources" SET "DiscoveredAt" = @p48, "Tags" = @p49
+      WHERE "Id" = @p50;
+      UPDATE "CloudResources" SET "DiscoveredAt" = @p51, "Tags" = @p52
+      WHERE "Id" = @p53;
+      UPDATE "CloudResources" SET "DiscoveredAt" = @p54, "Tags" = @p55
+      WHERE "Id" = @p56;
+      UPDATE "CloudResources" SET "DiscoveredAt" = @p57, "Tags" = @p58
+      WHERE "Id" = @p59;
+      UPDATE "CloudResources" SET "DiscoveredAt" = @p60, "Tags" = @p61
+      WHERE "Id" = @p62;
+      UPDATE "CloudResources" SET "DiscoveredAt" = @p63, "Tags" = @p64
+      WHERE "Id" = @p65;
+      UPDATE "CloudResources" SET "DiscoveredAt" = @p66, "Tags" = @p67
+      WHERE "Id" = @p68;
+      UPDATE "CloudResources" SET "DiscoveredAt" = @p69, "Tags" = @p70
+      WHERE "Id" = @p71;
+      UPDATE "CloudResources" SET "DiscoveredAt" = @p72, "Tags" = @p73
+      WHERE "Id" = @p74;
+      UPDATE "CloudResources" SET "DiscoveredAt" = @p75, "Tags" = @p76
+      WHERE "Id" = @p77;
+      UPDATE "CloudResources" SET "DiscoveredAt" = @p78, "Tags" = @p79
+      WHERE "Id" = @p80;
+      UPDATE "CloudResources" SET "DiscoveredAt" = @p81, "Tags" = @p82
+      WHERE "Id" = @p83;
+      UPDATE "CloudResources" SET "DiscoveredAt" = @p84, "Tags" = @p85
+      WHERE "Id" = @p86;
+      UPDATE "CloudResources" SET "DiscoveredAt" = @p87, "Tags" = @p88
+      WHERE "Id" = @p89;
+      UPDATE "CloudResources" SET "DiscoveredAt" = @p90, "Tags" = @p91
+      WHERE "Id" = @p92;
+      UPDATE "CloudResources" SET "DiscoveredAt" = @p93, "Tags" = @p94
+      WHERE "Id" = @p95;
+      UPDATE "CloudResources" SET "DiscoveredAt" = @p96, "Tags" = @p97
+      WHERE "Id" = @p98;
+      UPDATE "CloudResources" SET "DiscoveredAt" = @p99, "Tags" = @p100
+      WHERE "Id" = @p101;
+[32m[6:22:21 PM] [CLI][0m info: Draco.Application.Services.ResourceDiscoveryService[0]
+      Discovering resources for provider: AWS
+[32m[6:22:21 PM] [CLI][0m info: Draco.Infrastructure.Providers.AWSProvider[0]
+      Starting AWS resource discovery...
+[32m[6:22:22 PM] [CLI][0m info: Draco.Infrastructure.Providers.AWSProvider[0]
+      Discovered 2 resources in AWS.
+info: Draco.Application.Services.ResourceDiscoveryService[0]
+      Upserting 2 resources from AWS into repository.
+[32m[6:22:22 PM] [CLI][0m info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (79ms) [Parameters=[@__resource_Id_0='?'], CommandType='Text', CommandTimeout='30']
+      SELECT c."Id", c."DiscoveredAt", c."Location", c."Name", c."Provider", c."RawMetadata", c."ResourceGroupName", c."SubscriptionId", c."Tags", c."Type"
+      FROM "CloudResources" AS c
+      WHERE c."Id" = @__resource_Id_0
+      LIMIT 1
+[32m[6:22:22 PM] [CLI][0m info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (42ms) [Parameters=[@__resource_Id_0='?'], CommandType='Text', CommandTimeout='30']
+      SELECT c."Id", c."DiscoveredAt", c."Location", c."Name", c."Provider", c."RawMetadata", c."ResourceGroupName", c."SubscriptionId", c."Tags", c."Type"
+      FROM "CloudResources" AS c
+      WHERE c."Id" = @__resource_Id_0
+      LIMIT 1
+[32m[6:22:22 PM] [CLI][0m info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (42ms) [Parameters=[@p2='?', @p0='?' (DbType = DateTime), @p1='?', @p5='?', @p3='?' (DbType = DateTime), @p4='?'], CommandType='Text', CommandTimeout='30']
+      UPDATE "CloudResources" SET "DiscoveredAt" = @p0, "Tags" = @p1
+      WHERE "Id" = @p2;
+      UPDATE "CloudResources" SET "DiscoveredAt" = @p3, "Tags" = @p4
+      WHERE "Id" = @p5;
+[32m[6:22:22 PM] [CLI][0m info: Draco.Application.Services.ResourceDiscoveryService[0]
+      Resource discovery cycle complete.
+[32m[6:22:22 PM] [CLI][0m [38;5;8m6:22:22 PM[0m [38;5;2mScan complete.[0m Sleeping for 60 seconds...
+[36m[6:22:24 PM] [API][0m warn: Microsoft.AspNetCore.HttpsPolicy.HttpsRedirectionMiddleware[3]
+      Failed to determine the https port for redirect.
+[36m[6:22:24 PM] [API][0m info: Program[0]
+      Received message from whatsapp:+14256238503: How much am i spending?
+[36m[6:22:24 PM] [API][0m info: Draco.Infrastructure.Services.TwilioService[0]
+      Sending WhatsApp to whatsapp:+14256238503 via Twilio.
+[36m[6:22:24 PM] [API][0m warn: Microsoft.EntityFrameworkCore.Query[10102]
+      The query uses a row limiting operator ('Skip'/'Take') without an 'OrderBy' operator. This may lead to unpredictable results. If the 'Distinct' operator is used after 'OrderBy', then make sure to use the 'OrderBy' operator after 'Distinct' as the ordering would otherwise get erased.
+[36m[6:22:24 PM] [API][0m info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (47ms) [Parameters=[@__p_0='?' (DbType = Int32)], CommandType='Text', CommandTimeout='30']
+      SELECT c."Id", c."DiscoveredAt", c."Location", c."Name", c."Provider", c."RawMetadata", c."ResourceGroupName", c."SubscriptionId", c."Tags", c."Type"
+      FROM "CloudResources" AS c
+      LIMIT @__p_0
+[36m[6:22:24 PM] [API][0m info: Draco.Infrastructure.Services.GeminiAIService[0]
+      Processing user query: How much am i spending?
+[36m[6:22:24 PM] [API][0m info: System.Net.Http.HttpClient.IAIService.LogicalHandler[100]
+      Start processing HTTP request POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?*
+[36m[6:22:24 PM] [API][0m info: System.Net.Http.HttpClient.IAIService.ClientHandler[100]
+      Sending HTTP request POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?*
+[36m[6:22:31 PM] [API][0m info: System.Net.Http.HttpClient.IAIService.ClientHandler[101]
+      Received HTTP response headers after 6495.7275ms - 200
+[36m[6:22:31 PM] [API][0m info: System.Net.Http.HttpClient.IAIService.LogicalHandler[101]
+      End processing HTTP request after 6504.096ms - 200
+[36m[6:22:31 PM] [API][0m info: Program[0]
+      AI Response generated: Hello there! I am Draco, your friendly cloud governance companion 🐉 I have taken a look at your Azure environment, and while I do not have the exact live billing figures at my fingertips this second, I can certainly help you understand where your budget is likely going 💰
+      
+      Your primary costs are likely coming from the orion-sim-01 container instance and the compute resources associated with your three Machine Learning workspaces, such as restiq-2025-343070 🚀 Resources like your Key Vaults and Storage Accounts usually represent a much smaller fraction of your daily spend unless you are processing massive amounts of data.
+      
+      To get the most accurate number, I recommend checking the Cost Management and Billing section in your Azure Portal to see the current month-to-date totals. If you would like, I can help you look for ways to optimize those Machine Learning environments to save some extra gold ☁️✨ Just let me know how I can help!
+[36m[6:22:31 PM] [API][0m info: Draco.Infrastructure.Services.TwilioService[0]
+      Sending WhatsApp to whatsapp:+14256238503 via Twilio.

@@ -1,0 +1,40 @@
+Using launch settings from /Users/taufeeqali/Projects/Draco/src/Draco.Api/Properties/launchSettings.json...
+Building...
+/Users/taufeeqali/Projects/Draco/src/Draco.Infrastructure/Providers/AzureProvider.cs(38,30): warning CS8601: Possible null reference assignment. [/Users/taufeeqali/Projects/Draco/src/Draco.Infrastructure/Draco.Infrastructure.csproj]
+/Users/taufeeqali/Projects/Draco/src/Draco.Api/Program.cs(57,89): warning CS1998: This async method lacks 'await' operators and will run synchronously. Consider using the 'await' operator to await non-blocking API calls, or 'await Task.Run(...)' to do CPU-bound work on a background thread. [/Users/taufeeqali/Projects/Draco/src/Draco.Api/Draco.Api.csproj]
+warn: Microsoft.EntityFrameworkCore.Model.Validation[10620]
+      The property 'CloudResource.Tags' is a collection or enumeration type with a value converter but with no value comparer. Set a value comparer to ensure the collection/enumeration elements are compared correctly.
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (75ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      SELECT CASE WHEN COUNT(*) = 0 THEN FALSE ELSE TRUE END
+      FROM pg_class AS cls
+      JOIN pg_namespace AS ns ON ns.oid = cls.relnamespace
+      WHERE
+              cls.relkind IN ('r', 'v', 'm', 'f', 'p') AND
+              ns.nspname NOT IN ('pg_catalog', 'information_schema') AND
+              -- Exclude tables which are members of PG extensions
+              NOT EXISTS (
+                  SELECT 1 FROM pg_depend WHERE
+                      classid=(
+                          SELECT cls.oid
+                          FROM pg_class AS cls
+                                   JOIN pg_namespace AS ns ON ns.oid = cls.relnamespace
+                          WHERE relname='pg_class' AND ns.nspname='pg_catalog'
+                      ) AND
+                      objid=cls.oid AND
+                      deptype IN ('e', 'x')
+              )
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://localhost:5020
+info: Microsoft.Hosting.Lifetime[0]
+      Application started. Press Ctrl+C to shut down.
+info: Microsoft.Hosting.Lifetime[0]
+      Hosting environment: Development
+info: Microsoft.Hosting.Lifetime[0]
+      Content root path: /Users/taufeeqali/Projects/Draco/src/Draco.Api
+warn: Microsoft.AspNetCore.HttpsPolicy.HttpsRedirectionMiddleware[3]
+      Failed to determine the https port for redirect.
+info: Microsoft.EntityFrameworkCore.Database.Command[20101]
+      Executed DbCommand (47ms) [Parameters=[], CommandType='Text', CommandTimeout='30']
+      SELECT count(*)::int
+      FROM "CloudResources" AS c

@@ -11,7 +11,7 @@ public class GeminiAIService : IAIService
     private readonly HttpClient _httpClient;
     private readonly ILogger<GeminiAIService> _logger;
     private readonly string _apiKey;
-    private const string ApiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent";
+    private const string ApiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent";
 
     public GeminiAIService(HttpClient httpClient, ILogger<GeminiAIService> logger, IConfiguration configuration)
     {
@@ -41,6 +41,23 @@ public class GeminiAIService : IAIService
         return await CallGeminiAsync(prompt, cancellationToken);
     }
 
+    public async Task<string> ProcessQueryAsync(string query, string context, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Processing user query: {Query}", query);
+        var prompt = $@"You are Draco 🐉, a friendly and helpful autonomous cloud governance AI. 
+The user is asking: '{query}'
+Here is the context of their cloud infrastructure: {context}
+
+INSTRUCTIONS:
+1. Answer the user in a warm, professional, and friendly tone.
+2. Use emojis naturally throughout your response to make it feel alive! 🚀
+3. DO NOT use Markdown (no asterisks, no deep headers, no backticks). Use plain text only.
+4. If they ask for cost/billing, look for clues and provide a friendly estimate or advice.
+5. Keep it concise but helpful.";
+
+        return await CallGeminiAsync(prompt, cancellationToken);
+    }
+
     private async Task<string> CallGeminiAsync(string prompt, CancellationToken cancellationToken)
     {
         var requestBody = new
@@ -63,11 +80,20 @@ public class GeminiAIService : IAIService
 
         var result = await response.Content.ReadAsStringAsync(cancellationToken);
         using var doc = JsonDocument.Parse(result);
-        return doc.RootElement
-            .GetProperty("candidates")[0]
-            .GetProperty("content")
-            .GetProperty("parts")[0]
-            .GetProperty("text")
-            .GetString() ?? "No analysis provided.";
+        
+        var candidates = doc.RootElement.GetProperty("candidates");
+        if (candidates.GetArrayLength() > 0)
+        {
+            var parts = candidates[0].GetProperty("content").GetProperty("parts");
+            foreach (var part in parts.EnumerateArray())
+            {
+                if (part.TryGetProperty("text", out var textElement))
+                {
+                    return textElement.GetString() ?? "No analysis provided.";
+                }
+            }
+        }
+
+        return "No analysis provided.";
     }
 }

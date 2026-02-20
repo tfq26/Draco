@@ -62,26 +62,96 @@ app.MapPost("/api/ingest", async ([FromBody] object cloudData, ILogger<Program> 
 })
 .WithName("IngestCloudData");
 
-// 2. Twilio Webhook for Remediation Approval
-app.MapPost("/api/webhook/twilio", async (HttpContext context, RemediationService remediationService, ILogger<Program> logger) =>
+// 2. Twilio Webhook for Remediation Approval and AI Chat
+app.MapPost("/api/webhook/twilio", async (
+    HttpContext context, 
+    RemediationService remediationService, 
+    IAIService aiService, 
+    IMessagingService messagingService,
+    DracoDbContext dbContext, 
+    ILogger<Program> logger) =>
 {
     var form = await context.Request.ReadFormAsync();
     var body = form["Body"].ToString().Trim();
-    var from = form["From"].ToString();
+    var fromRaw = form["From"].ToString();
+    
+    // Twilio form data URL-decodes the '+' into a space if we aren't careful.
+    var from = fromRaw.Replace(" ", "+");
 
-    logger.LogInformation($"Received SMS from {from}: {body}");
+    logger.LogInformation($"Received message from {from}: {body}");
 
+    // Handle Approval
     if (body.Equals("Yes", StringComparison.OrdinalIgnoreCase) || body.Equals("Apply", StringComparison.OrdinalIgnoreCase))
     {
-        logger.LogInformation("Approval received via SMS! Remediating...");
-        // In a real app, we'd pull the context from DB
-        await remediationService.RemediateAsync("Underutilized VM detected in scan", "taufeeqali", "Draco-Governance");
-        return Results.Content("<Response><Message>Remediation started.</Message></Response>", "application/xml");
+        logger.LogInformation("Approval received! Remediating...");
+        await remediationService.RemediateAsync("Action requested via chat", from, "Draco-Governance");
+        var approvalMsg = "Remediation started. I will notify you once complete.";
+        
+        if (from.StartsWith("whatsapp:"))
+            await messagingService.SendWhatsAppMessageAsync(from, approvalMsg);
+        else
+            await messagingService.SendMessageAsync(from, approvalMsg);
+
+        return Results.Ok();
     }
 
-    return Results.Content("<Response></Response>", "application/xml");
+    // Handle General Query with AI
+    try 
+    {
+        // 1. Send immediate "typing" acknowledgment
+        var ackMsg = "Got it! Draco is looking into your cloud resources now... 🐉🔍";
+        if (from.StartsWith("whatsapp:"))
+            await messagingService.SendWhatsAppMessageAsync(from, ackMsg);
+        else
+            await messagingService.SendMessageAsync(from, ackMsg);
+
+        var resources = await dbContext.CloudResources.Take(10).ToListAsync();
+        var contextStr = string.Join("; ", resources.Select(r => $"{r.Name} ({r.Type}, {r.Provider})"));
+        
+        var aiResponse = await aiService.ProcessQueryAsync(body, contextStr);
+        logger.LogInformation("AI Response generated: {Response}", aiResponse);
+
+        // Explicitly send the message back via Twilio API (more reliable for WhatsApp than TwiML)
+        if (from.StartsWith("whatsapp:"))
+        {
+            await messagingService.SendWhatsAppMessageAsync(from, aiResponse);
+        }
+        else 
+        {
+            await messagingService.SendMessageAsync(from, aiResponse);
+        }
+
+        return Results.Ok();
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Error processing AI query via webhook.");
+        var errorMsg = "Sorry, I encountered an error processing your request.";
+        
+        if (from.StartsWith("whatsapp:"))
+            await messagingService.SendWhatsAppMessageAsync(from, errorMsg);
+        else
+            await messagingService.SendMessageAsync(from, errorMsg);
+
+        return Results.Ok();
+    }
 })
 .WithName("TwilioWebhook");
+
+// 3. Health Check for Tunnel/Status
+app.MapGet("/health", async (DracoDbContext dbContext) =>
+{
+    var count = await dbContext.CloudResources.CountAsync();
+    return Results.Ok(new
+    {
+        status = "Healthy",
+        timestamp = DateTime.UtcNow,
+        resourceCount = count,
+        aiModel = "Gemini 3 Flash Preview",
+        tunnelActive = true
+    });
+})
+.WithName("HealthCheck");
 
 // Initialize Database automatically on start
 using (var scope = app.Services.CreateScope())

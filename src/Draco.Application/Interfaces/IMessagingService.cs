@@ -3,6 +3,7 @@ namespace Draco.Application.Interfaces;
 public interface IMessagingService
 {
     Task SendMessageAsync(string to, string message, CancellationToken cancellationToken = default);
+    Task SendWhatsAppMessageAsync(string to, string message, CancellationToken cancellationToken = default);
 }
 
 public interface IEmailService
