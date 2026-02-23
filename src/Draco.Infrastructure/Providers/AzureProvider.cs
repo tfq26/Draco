@@ -1,3 +1,4 @@
+using Azure.Core;
 using Azure.Identity;
 using Azure.ResourceManager;
 using Draco.Application.Interfaces;
@@ -8,26 +9,49 @@ namespace Draco.Infrastructure.Providers;
 
 public class AzureProvider : ICloudProvider
 {
-    private readonly ArmClient _armClient;
     private readonly ILogger<AzureProvider> _logger;
+    private ArmClient? _armClient;
 
     public string ProviderName => "Azure";
 
     public AzureProvider(ILogger<AzureProvider> logger)
     {
         _logger = logger;
-        // In a real app, we'd pull the credentials from a secure configuration or DefaultAzureCredential
-        _armClient = new ArmClient(new DefaultAzureCredential());
     }
 
-    public async Task<IEnumerable<CloudResource>> ListResourcesAsync(CancellationToken cancellationToken = default)
+    private ArmClient GetClient(string? accessToken)
+    {
+        if (_armClient != null && accessToken == null) return _armClient;
+        
+        if (!string.IsNullOrEmpty(accessToken))
+        {
+            _logger.LogInformation("Using provided OAuth token for Azure connection.");
+            return new ArmClient(new SimpleTokenCredential(accessToken));
+        }
+
+        return _armClient ??= new ArmClient(new DefaultAzureCredential());
+    }
+
+    private class SimpleTokenCredential : TokenCredential
+    {
+        private readonly AccessToken _token;
+        public SimpleTokenCredential(string token)
+        {
+            _token = new AccessToken(token, DateTimeOffset.UtcNow.AddHours(1));
+        }
+        public override ValueTask<AccessToken> GetTokenAsync(TokenRequestContext requestContext, CancellationToken cancellationToken) => new(_token);
+        public override AccessToken GetToken(TokenRequestContext requestContext, CancellationToken cancellationToken) => _token;
+    }
+
+    public async Task<IEnumerable<CloudResource>> ListResourcesAsync(string? accessToken = null, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Starting Azure resource discovery...");
         var resources = new List<CloudResource>();
+        var client = GetClient(accessToken);
 
         try
         {
-            await foreach (var subscription in _armClient.GetSubscriptions().GetAllAsync(cancellationToken))
+            await foreach (var subscription in client.GetSubscriptions().GetAllAsync(cancellationToken))
             {
                 _logger.LogDebug("Scanning subscription: {SubscriptionId}", subscription.Data.SubscriptionId);
                 
@@ -57,7 +81,7 @@ public class AzureProvider : ICloudProvider
         return resources;
     }
 
-    public Task<IDictionary<string, double>> GetMetricsAsync(string resourceId, IEnumerable<string> metricNames, TimeSpan timespan, CancellationToken cancellationToken = default)
+    public Task<IDictionary<string, double>> GetMetricsAsync(string resourceId, IEnumerable<string> metricNames, TimeSpan timespan, string? accessToken = null, CancellationToken cancellationToken = default)
     {
         // To be implemented with Azure.Monitor.Query
         _logger.LogWarning("GetMetricsAsync not yet implemented for Azure provider.");

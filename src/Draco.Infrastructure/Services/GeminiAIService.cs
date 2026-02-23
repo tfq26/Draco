@@ -11,6 +11,7 @@ public class GeminiAIService : IAIService
     private readonly HttpClient _httpClient;
     private readonly ILogger<GeminiAIService> _logger;
     private readonly string _apiKey;
+    private readonly string _systemPrompt;
     private const string ApiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent";
 
     public GeminiAIService(HttpClient httpClient, ILogger<GeminiAIService> logger, IConfiguration configuration)
@@ -18,46 +19,98 @@ public class GeminiAIService : IAIService
         _httpClient = httpClient;
         _logger = logger;
         _apiKey = configuration["Gemini:ApiKey"] ?? configuration["GOOGLE_GEMINI_API_KEY"] ?? "KEY";
+        _systemPrompt = LoadSystemPrompt();
+    }
+
+    private static string LoadSystemPrompt()
+    {
+        // Look for the prompt file relative to the application base directory
+        var basePath = AppContext.BaseDirectory;
+        var promptPaths = new[]
+        {
+            Path.Combine(basePath, "Prompts", "draco-system-prompt.md"),
+            Path.Combine(basePath, "..", "..", "..", "Prompts", "draco-system-prompt.md"),
+            Path.Combine(Directory.GetCurrentDirectory(), "Prompts", "draco-system-prompt.md")
+        };
+
+        foreach (var path in promptPaths)
+        {
+            if (File.Exists(path))
+            {
+                return File.ReadAllText(path);
+            }
+        }
+
+        // Fallback if file not found
+        return "You are Draco, a helpful cloud governance AI. Be concise, professional, and use emojis naturally.";
     }
 
     public async Task<string> AnalyzeAnomalyAsync(string rawData, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Analyzing cloud data with Gemini...");
-        var prompt = $"Analyze the following cloud resource data and identify any cost anomalies or security risks. Redact any PII. Data: {rawData}";
+        var prompt = $@"{_systemPrompt}
+
+---
+TASK: Analyze the following cloud resource data and identify any cost anomalies or security risks. Redact any PII.
+
+DATA:
+{rawData}";
         return await CallGeminiAsync(prompt, cancellationToken);
     }
 
     public async Task<string> GenerateRemediationHclAsync(string context, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Generating Terraform remediation for context: {Context}", context);
-        var prompt = $"Given this cloud anomaly: {context}, generate a valid and safe Terraform HCL snippet to remediate the issue. Output ONLY the HCL.";
+        var prompt = $@"{_systemPrompt}
+
+---
+TASK: Generate a valid and safe Terraform HCL snippet to remediate the following cloud anomaly. Output ONLY the HCL code.
+
+ANOMALY:
+{context}";
         return await CallGeminiAsync(prompt, cancellationToken);
     }
 
     public async Task<string> CreateConversationalAlertAsync(string analysis, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Creating natural language alert for analysis.");
-        var prompt = $"Translate this technical cloud analysis into a concise, professional message for a sentinel to send via SMS: {analysis}";
+        var prompt = $@"{_systemPrompt}
+
+---
+TASK: Translate this technical cloud analysis into a concise, professional SMS alert message.
+
+ANALYSIS:
+{analysis}";
         return await CallGeminiAsync(prompt, cancellationToken);
     }
 
     public async Task<string> ProcessQueryAsync(string query, string context, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Processing user query: {Query}", query);
-        var prompt = $@"You are Draco 🐉, a friendly and helpful autonomous cloud governance AI. 
-The user is asking: '{query}'
-Here is the context of their cloud infrastructure: {context}
+        var prompt = $@"{_systemPrompt}
 
-INSTRUCTIONS:
-1. Answer the user in a warm, professional, and friendly tone.
-2. Use emojis naturally throughout your response to make it feel alive! 🚀
-3. DO NOT use Markdown (no asterisks, no deep headers, no backticks). Use plain text only.
-4. If they ask for cost/billing, look for clues and provide a friendly estimate or advice.
-5. Be concise so that information is condensed and easy to read at a glance.
-6. End your response with a short message telling the user they can ask about a particular part of the response for more detail.
-7. CRITICAL: Your entire response must genuinely be UNDER 1500 characters, no exceptions.";
+---
+TASK: Answer the user's question using the provided infrastructure context.
 
+USER QUESTION: {query}
+
+INFRASTRUCTURE CONTEXT:
+{context}";
         return await CallGeminiAsync(prompt, cancellationToken);
+    }
+
+    public async Task<string> AnalyzeResourcesAsync(IEnumerable<object> resources, string prompt, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Analyzing multiple resources with Gemini...");
+        var resourcesJson = JsonSerializer.Serialize(resources);
+        var fullPrompt = $@"{_systemPrompt}
+
+---
+{prompt}
+
+RAW DATA:
+{resourcesJson}";
+        return await CallGeminiAsync(fullPrompt, cancellationToken);
     }
 
     private async Task<string> CallGeminiAsync(string prompt, CancellationToken cancellationToken)

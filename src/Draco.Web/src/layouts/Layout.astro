@@ -1,5 +1,6 @@
 ---
 import '../styles/global.css';
+import AuthStatus from '../components/AuthStatus.vue';
 
 interface Props {
 	title: string;
@@ -23,13 +24,18 @@ const { title } = Astro.props;
 	</head>
 	<body>
     <nav>
-      <a href="/" class="logo">
-        <img src="/draco-colored.svg" alt="Draco Logo" class="logo-img logo-light" />
-        <img src="/draco-white.svg" alt="Draco Logo" class="logo-img logo-dark" />
-      </a>
-      <div class="nav-links">
-        <a href="#features">Features</a>
-        <a href="/docs" style="margin-left: 20px;">Docs</a>
+      <div class="nav-left">
+        <a href="/" class="logo">
+          <img src="/draco-colored.svg" alt="Draco Logo" class="logo-img logo-light" />
+          <img src="/draco-white.svg" alt="Draco Logo" class="logo-img logo-dark" />
+        </a>
+        <div class="nav-links">
+          <a href="/#features">Features</a>
+          <a href="/docs">Docs</a>
+        </div>
+      </div>
+      <div class="nav-right">
+        <AuthStatus client:load />
       </div>
     </nav>
 		<slot />

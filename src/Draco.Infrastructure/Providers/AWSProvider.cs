@@ -18,7 +18,7 @@ public class AWSProvider : ICloudProvider
 
     public string ProviderName => "AWS";
 
-    public async Task<IEnumerable<CloudResource>> ListResourcesAsync(CancellationToken cancellationToken = default)
+    public async Task<IEnumerable<CloudResource>> ListResourcesAsync(string? accessToken = null, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Starting AWS resource discovery...");
         
@@ -55,7 +55,7 @@ public class AWSProvider : ICloudProvider
         return resources;
     }
 
-    public async Task<IDictionary<string, double>> GetMetricsAsync(string resourceId, IEnumerable<string> metricNames, TimeSpan timespan, CancellationToken cancellationToken = default)
+    public async Task<IDictionary<string, double>> GetMetricsAsync(string resourceId, IEnumerable<string> metricNames, TimeSpan timespan, string? accessToken = null, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Fetching metrics for AWS resource {ResourceId}", resourceId);
         await Task.Delay(500, cancellationToken);

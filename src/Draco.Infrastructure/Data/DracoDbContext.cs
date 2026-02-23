@@ -11,6 +11,9 @@ public class DracoDbContext : DbContext
 
     public DbSet<CloudResource> CloudResources => Set<CloudResource>();
     public DbSet<RemediationAudit> RemediationAudits => Set<RemediationAudit>();
+    public DbSet<UserAccount> UserAccounts => Set<UserAccount>();
+    public DbSet<CloudConnection> CloudConnections => Set<CloudConnection>();
+    public DbSet<PulseReportSchedule> PulseReportSchedules => Set<PulseReportSchedule>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -29,6 +32,25 @@ public class DracoDbContext : DbContext
                     v => System.Text.Json.JsonSerializer.Serialize(v, (System.Text.Json.JsonSerializerOptions?)null),
                     v => System.Text.Json.JsonSerializer.Deserialize<IDictionary<string, string>>(v, (System.Text.Json.JsonSerializerOptions?)null) ?? new Dictionary<string, string>()
                 );
+        });
+
+        // Configure UserAccount
+        modelBuilder.Entity<UserAccount>(entity =>
+        {
+            entity.HasKey(e => e.Phone);
+            entity.HasMany(e => e.Connections)
+                  .WithOne()
+                  .HasForeignKey(c => c.UserPhone);
+            entity.HasMany(e => e.ReportSchedules)
+                  .WithOne()
+                  .HasForeignKey(s => s.UserPhone);
+        });
+
+        // Configure CloudConnection
+        modelBuilder.Entity<CloudConnection>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.UserPhone);
         });
         
         // Ensure pgvector extension is enabled

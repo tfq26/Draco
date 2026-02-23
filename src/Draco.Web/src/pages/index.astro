@@ -1,6 +1,5 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import SetupWizardWrapper from '../components/SetupWizardWrapper.vue';
 ---
 
 <Layout title="Autonomous Cloud Governance">
@@ -9,7 +8,7 @@ import SetupWizardWrapper from '../components/SetupWizardWrapper.vue';
       <h1>Cloud Governance on <span style="color: var(--dragon-red);">Autopilot</span></h1>
       <p>The open-source sentinel that watches your cloud and fixes issues before they hit your apps.</p>
       <div class="hero-actions">
-        <SetupWizardWrapper client:load />    
+        <a href="/setup" class="btn" style="background: var(--dragon-red);">Initialize Draco Online</a>
         <a href="https://github.com/tfq26/Draco" class="btn" style="background: transparent; border: 1px solid var(--border-color);">View on GitHub</a>
       </div>
     </section>

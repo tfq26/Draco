@@ -71,12 +71,38 @@ nav {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1.5rem 2rem;
+  padding: 1rem 2rem;
   border-bottom: 1px solid var(--border-color);
   backdrop-filter: blur(10px);
   position: sticky;
   top: 0;
   z-index: 100;
+  background: rgba(16, 16, 16, 0.5);
+}
+
+.nav-left,
+.nav-right {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+}
+
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.nav-links a {
+  font-weight: 600;
+  color: var(--text-color);
+  opacity: 0.8;
+  font-size: 0.95rem;
+}
+
+.nav-links a:hover {
+  opacity: 1;
+  color: var(--accent-color);
 }
 
 .logo {

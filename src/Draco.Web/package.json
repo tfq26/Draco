@@ -19,6 +19,7 @@
     "@types/react-dom": "^19.2.3",
     "astro": "^5.17.3",
     "autoprefixer": "^10.4.24",
+    "better-auth": "^1.4.19",
     "dotenv": "^17.3.1",
     "drizzle-orm": "^0.45.1",
     "postcss": "^8.5.6",

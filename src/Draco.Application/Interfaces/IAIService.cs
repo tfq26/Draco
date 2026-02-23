@@ -6,4 +6,5 @@ public interface IAIService
     Task<string> GenerateRemediationHclAsync(string context, CancellationToken cancellationToken = default);
     Task<string> CreateConversationalAlertAsync(string analysis, CancellationToken cancellationToken = default);
     Task<string> ProcessQueryAsync(string query, string context, CancellationToken cancellationToken = default);
+    Task<string> AnalyzeResourcesAsync(IEnumerable<object> resources, string prompt, CancellationToken cancellationToken = default);
 }

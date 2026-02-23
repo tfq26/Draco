@@ -1,0 +1,17 @@
+---
+import Layout from '../layouts/Layout.astro';
+import SignUp from '../components/SignUp.vue';
+---
+
+<Layout title="Register Identity">
+  <main class="container">
+    <SignUp client:load />
+  </main>
+</Layout>
+
+<style>
+  .container {
+    padding-top: 4rem;
+    padding-bottom: 4rem;
+  }
+</style>

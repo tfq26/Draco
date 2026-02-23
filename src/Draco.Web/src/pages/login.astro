@@ -1,0 +1,17 @@
+---
+import Layout from '../layouts/Layout.astro';
+import SignIn from '../components/SignIn.vue';
+---
+
+<Layout title="Sign In">
+  <main class="container">
+    <SignIn client:load />
+  </main>
+</Layout>
+
+<style>
+  .container {
+    padding-top: 4rem;
+    padding-bottom: 4rem;
+  }
+</style>
