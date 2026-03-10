@@ -12,7 +12,7 @@
       <div class="context-content">
         <div class="logo-area">
           <img src="/draco-colored.svg" alt="Draco Logo" class="onboarding-logo" />
-          <span class="brand-name">Draco Sentinel</span>
+          <span class="brand-name">Draco</span>
         </div>
         
         <Transition name="fade" mode="out-in">
@@ -79,10 +79,10 @@
               </div>
             </div>
 
-            <!-- Step 3: Identity Capture (Email) -->
+            <!-- Step 3: Account Details (Email) -->
             <div v-if="step === 3" class="step-card">
-              <h2 class="question-title">Identity Capture</h2>
-              <p class="question-sub">Enter your primary access point for the Draco network.</p>
+              <h2 class="question-title">Create Account</h2>
+              <p class="question-sub">Enter your email address to get started.</p>
               <div class="input-group">
                 <input 
                   v-model="email" 
@@ -93,14 +93,14 @@
                 />
               </div>
               <button @click="nextStep" class="primary-btn" :disabled="isLoading || !email">
-                Continue to Handshake
+                Continue to Password
               </button>
             </div>
 
-            <!-- Step 4: Cryptographic Handshake (Password) -->
+            <!-- Step 4: Password Setup -->
             <div v-if="step === 4" class="step-card">
-              <h2 class="question-title">Security Handshake</h2>
-              <p class="question-sub">Verify your identity for <strong>{{ email }}</strong>.</p>
+              <h2 class="question-title">Secure Your Account</h2>
+              <p class="question-sub">Create a password for <strong>{{ email }}</strong>.</p>
               
               <div class="input-group">
                 <input 
@@ -114,11 +114,11 @@
 
               <div class="auth-actions mt-8">
                 <button @click="handleAuth" class="primary-btn wide" :disabled="isLoading || !password">
-                  {{ isLoginMode ? (isLoading ? 'Synchronizing...' : 'Login') : (isLoading ? 'Creating Identity...' : 'Register Operator') }}
+                  {{ isLoginMode ? (isLoading ? 'Signing in...' : 'Sign In') : (isLoading ? 'Creating account...' : 'Create Account') }}
                 </button>
                 
                 <button @click="isLoginMode = !isLoginMode" class="secondary-btn mt-4 ghost">
-                  {{ isLoginMode ? "Don't have an account? Register" : "Already have an account? Sign In" }}
+                  {{ isLoginMode ? "Don't have an account? Sign Up" : "Already have an account? Sign In" }}
                 </button>
               </div>
 
@@ -127,8 +127,8 @@
 
             <!-- Step 5: Cloud Connection -->
             <div v-if="step === 5" class="step-card">
-              <h2 class="question-title">Connect Infrastructure</h2>
-              <p class="question-sub">Draco uses read-only OAuth to securely audit your cloud environment.</p>
+              <h2 class="question-title">Connect Cloud Accounts</h2>
+              <p class="question-sub">Draco uses read-only access to securely audit your cloud environment.</p>
               
               <div class="auth-grid">
                 <!-- Azure Auth -->
@@ -138,7 +138,7 @@
                     <div class="provider-logo azure"></div>
                     <div class="provider-meta">
                       <h3>Microsoft Azure</h3>
-                      <p>{{ azureConnected ? 'Scanning Active' : 'OAuth Integration' }}</p>
+                      <p>{{ azureConnected ? 'Connected' : 'Azure Integration' }}</p>
                     </div>
                     <button @click="connectAzure" class="connect-action-btn" :disabled="isLoading">
                       <span v-if="azureConnected" class="status-pill connected">Online</span>
@@ -155,11 +155,11 @@
                     <div class="provider-logo aws"></div>
                     <div class="provider-meta">
                       <h3>Amazon Web Services</h3>
-                      <p>{{ awsConnected ? 'Scanning Active' : 'OAuth Integration' }}</p>
+                      <p>{{ awsConnected ? 'Connected' : 'AWS Integration' }}</p>
                     </div>
                     <button @click="connectAWS" class="connect-action-btn" :disabled="isLoading">
                       <span v-if="awsConnected" class="status-pill connected">Online</span>
-                      <span v-else class="status-pill idle">{{ isLoading && loadingProvider === 'AWS' ? 'Verifying...' : 'Link Account' }}</span>
+                      <span v-else class="status-pill idle">{{ isLoading && loadingProvider === 'AWS' ? 'Connecting...' : 'Link Account' }}</span>
                     </button>
                   </div>
                   <div v-if="awsConnected" class="connection-line"></div>
@@ -169,7 +169,7 @@
               <div class="action-footer mt-12">
                 <button @click="finishSetup" class="primary-btn wide" :disabled="isLoading">
                   <span v-if="isLoading" class="loader-dots"><span></span><span></span><span></span></span>
-                  <span v-else>{{ (azureConnected || awsConnected) ? 'Activate Sentinel 🐉' : 'Continue to Dashboard' }}</span>
+                  <span v-else>{{ (azureConnected || awsConnected) ? 'Finish Setup' : 'Continue to Dashboard' }}</span>
                 </button>
                 <p v-if="!azureConnected && !awsConnected" class="skip-hint mt-4">
                   No cloud connected. You'll enter "Observer Mode" until a provider is linked.
@@ -186,26 +186,26 @@
 
               <div class="success-content">
                 <h2 class="success-title">
-                  {{ (azureConnected || awsConnected) ? 'Sentinel Fully Engaged' : 'Identity Verified' }}
+                  {{ (azureConnected || awsConnected) ? 'Account Ready' : 'Account Created' }}
                 </h2>
                 <div class="config-summary-card glass mt-6">
                   <div class="summary-item">
-                    <span class="label">Operator</span>
+                    <span class="label">User</span>
                     <span class="value">{{ name }}</span>
                   </div>
                   <div class="summary-item">
-                    <span class="label">Priority Lead</span>
+                    <span class="label">Phone</span>
                     <span class="value">{{ phone }}</span>
                   </div>
                   <div class="summary-item">
                     <span class="label">Status</span>
-                    <span class="value active">Active Observation</span>
+                    <span class="value active">Online</span>
                   </div>
                 </div>
 
                 <div class="action-stack mt-10">
                   <button @click="goToProfile" class="primary-btn">
-                    Configure Reporting Pulse
+                    Configure Settings
                   </button>
                   <button @click="closeSetup" class="tertiary-btn">
                     Enter Dashboard
@@ -231,6 +231,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue';
 import { authClient } from '../lib/auth';
+import { dracoApiFetch, getDracoApiBaseUrl, getDracoApiToken } from '../lib/dracoApi';
 
 const emit = defineEmits(['close']);
 
@@ -239,7 +240,6 @@ const isLoading = ref(false);
 const error = ref('');
 const transitionName = ref('slide-next');
 const isLoginMode = ref(true);
-const sessionToken = ref('');
 
 // Data
 const name = ref('');
@@ -260,16 +260,18 @@ const azure = ref({
   subscriptionId: ''
 });
 
+const isExistingUserDetected = ref(false);
+
 // Guidance Copy
 const guidanceTitle = computed(() => {
   if (step.value === 3 && isExistingUserDetected.value) return "Account detected.";
   switch (step.value) {
     case 1: return "First encounters.";
     case 2: return "Communication Channel.";
-    case 3: return "Securing the line.";
+    case 3: return "Create account.";
     case 4: return "Verification.";
     case 5: return "Cloud Connection.";
-    case 6: return "Setup status.";
+    case 6: return "All set!";
     default: return "";
   }
 });
@@ -277,12 +279,12 @@ const guidanceTitle = computed(() => {
 const guidanceText = computed(() => {
   if (step.value === 3 && isExistingUserDetected.value) return "We found an existing Sentinel associated with this signal. Verification is required to re-establish control.";
   switch (step.value) {
-    case 1: return "We like to know who we're protecting. It makes the alerts more personal.";
-    case 2: return "Choose the frequency that suits your workflow. Draco talks via secure, real-time channels.";
-    case 3: return "Governance is binary: you're either secure or you're not. We verify every signal.";
-    case 4: return "Just checking it's really you. Security starts with identity.";
-    case 5: return "Draco needs read-only access to scan for vulnerabilities and misconfigurations.";
-    case 6: return (azureConnected.value || awsConnected.value) ? "Systems operational. Welcome to autonomous governance." : "Identity captured. Connect your infrastructure at your convenience.";
+    case 1: return "We'd like to know who we're helping. It makes the reports more personal.";
+    case 2: return "Choose a frequency that suits your workflow. Draco sends alerts via real-time channels.";
+    case 3: return "Security is everything. We verify every account connection.";
+    case 4: return "Just checking it's really you. Your privacy is our priority.";
+    case 5: return "Draco needs read-only access to scan for potential issues and misconfigurations.";
+    case 6: return (azureConnected.value || awsConnected.value) ? "Systems ready. Welcome to Draco." : "Account created. Connect your cloud when you're ready.";
     default: return "";
   }
 });
@@ -290,52 +292,76 @@ const guidanceText = computed(() => {
 // Methods
 const nextStep = () => {
   transitionName.value = 'slide-next';
-  step.value++;
+  
+  // Intelligence for skipping steps if already authenticated
+  if (step.value === 2 && email.value) {
+    step.value = 5; // Skip Email (3) and Password (4) if we have a session
+  } else {
+    step.value++;
+  }
 };
 
 const prevStep = () => {
   transitionName.value = 'slide-prev';
-  step.value--;
+  if (step.value === 5 && email.value) {
+    step.value = 2;
+  } else {
+    step.value--;
+  }
 };
 
 
 
 const connectAzure = async () => {
-  loadingProvider.value = 'Azure';
-  isLoading.value = true;
-  const authUrl = `http://localhost:5020/api/auth/azure?access_token=${encodeURIComponent(sessionToken.value)}`;
-  const width = 600, height = 700;
-  const left = window.innerWidth / 2 - width / 2;
-  const top = window.innerHeight / 2 - height / 2;
+  try {
+    loadingProvider.value = 'Azure';
+    isLoading.value = true;
 
-  const authWindow = window.open(
-    authUrl,
-    'Connect Azure',
-    `width=${width},height=${height},left=${left},top=${top}`
-  );
+    const token = await getDracoApiToken();
+    const authUrl = `${getDracoApiBaseUrl()}/api/auth/azure?access_token=${encodeURIComponent(token)}`;
+    const width = 600, height = 700;
+    const left = window.innerWidth / 2 - width / 2;
+    const top = window.innerHeight / 2 - height / 2;
 
-  // Poll for window closure as a simple way to know they finished
-  const timer = setInterval(() => {
-    if (authWindow && authWindow.closed) {
-      clearInterval(timer);
-      azureConnected.value = true;
-      isLoading.value = false;
-      loadingProvider.value = '';
-    }
-  }, 1000);
+    const authWindow = window.open(
+      authUrl,
+      'Connect Azure',
+      `width=${width},height=${height},left=${left},top=${top}`
+    );
+
+    const timer = setInterval(() => {
+      if (authWindow && authWindow.closed) {
+        clearInterval(timer);
+        azureConnected.value = true;
+        isLoading.value = false;
+        loadingProvider.value = '';
+      }
+    }, 1000);
+  } catch (err) {
+    error.value = err.message || 'Failed to start Azure connection.';
+    isLoading.value = false;
+    loadingProvider.value = '';
+  }
 };
 
 const connectAWS = async () => {
-  loadingProvider.value = 'AWS';
-  isLoading.value = true;
-  const authUrl = `http://localhost:5020/api/auth/aws?access_token=${encodeURIComponent(sessionToken.value)}`;
-  window.open(authUrl, '_blank');
-  
-  // For demo purposes, we'll just wait a bit
-  await new Promise(r => setTimeout(r, 3000));
-  awsConnected.value = true;
-  isLoading.value = false;
-  loadingProvider.value = '';
+  try {
+    loadingProvider.value = 'AWS';
+    isLoading.value = true;
+    const token = await getDracoApiToken();
+    const authUrl = `${getDracoApiBaseUrl()}/api/auth/aws?access_token=${encodeURIComponent(token)}`;
+    window.open(authUrl, '_blank');
+    
+    // For demo purposes, we'll just wait a bit
+    await new Promise(r => setTimeout(r, 3000));
+    awsConnected.value = true;
+    isLoading.value = false;
+    loadingProvider.value = '';
+  } catch (err) {
+    error.value = err.message || 'Failed to start AWS connection.';
+    isLoading.value = false;
+    loadingProvider.value = '';
+  }
 };
 
 const handleAuth = async () => {
@@ -343,20 +369,19 @@ const handleAuth = async () => {
     isLoading.value = true;
     try {
         if (isLoginMode.value) {
-            const { data, error: authError } = await authClient.signIn.email({
+            const { error: authError } = await authClient.signIn.email({
                 email: email.value,
                 password: password.value,
             });
             if (authError) throw authError;
-            sessionToken.value = data.token;
         } else {
-            const { data, error: authError } = await authClient.signUp.email({
+            const { error: authError } = await authClient.signUp.email({
                 email: email.value,
                 password: password.value,
                 name: name.value,
+                phone: phone.value,
             });
             if (authError) throw authError;
-            sessionToken.value = data.token;
         }
         isLoading.value = false;
         nextStep();
@@ -375,16 +400,14 @@ const finishSetup = async () => {
   if (awsConnected.value) connections.push({ provider: 'AWS', subscriptionId: 'OAuth-Managed', accessToken: 'dummy-token' });
 
   try {
-    const response = await fetch('http://localhost:5020/api/auth/setup-complete', {
+    const response = await dracoApiFetch('/api/auth/setup-complete', {
       method: 'POST',
-      headers: { 
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${sessionToken.value}`
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         phone: phone.value,
         name: name.value,
         email: email.value,
+        preferredChannel: channel.value,
         connections: connections
       })
     });
@@ -414,6 +437,23 @@ const closeSetup = () => {
   emit('close');
   window.location.href = '/';
 }
+
+onMounted(async () => {
+  try {
+    const { data: sessionData } = await authClient.getSession();
+    if (sessionData) {
+      email.value = sessionData.user?.email || '';
+      name.value = sessionData.user?.name || '';
+      
+      // If they have a name, jump straight to notifications
+      if (name.value) {
+        step.value = 2;
+      }
+    }
+  } catch (err) {
+    console.error("Auth check failed in setup wizard", err);
+  }
+});
 </script>
 
 <style scoped>

@@ -1,17 +1,20 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import SignUp from '../components/SignUp.vue';
+import UnifiedAuth from '../components/UnifiedAuth.vue';
 ---
 
-<Layout title="Register Identity">
-  <main class="container">
-    <SignUp client:load />
-  </main>
+<Layout title="Create Account">
+	<main class="auth-page">
+		<UnifiedAuth initialMode="signup" client:load />
+	</main>
 </Layout>
 
 <style>
-  .container {
-    padding-top: 4rem;
-    padding-bottom: 4rem;
-  }
+	.auth-page {
+		min-height: calc(100vh - 100px);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 2rem;
+	}
 </style>

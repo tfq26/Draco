@@ -5,32 +5,66 @@ import Layout from '../layouts/Layout.astro';
 <Layout title="Autonomous Cloud Governance">
 	<main>
     <section class="hero">
-      <h1>Cloud Governance on <span style="color: var(--dragon-red);">Autopilot</span></h1>
-      <p>The open-source sentinel that watches your cloud and fixes issues before they hit your apps.</p>
+      <div class="glow-effect"></div>
+      <h1>Level up your <span class="text-gradient">Cloud</span></h1>
+      <p>The open-source cloud monitoring and governance tool that optimizes your infrastructure, reduces costs, and remediates drift autonomously.</p>
       <div class="hero-actions">
-        <a href="/setup" class="btn" style="background: var(--dragon-red);">Initialize Draco Online</a>
-        <a href="https://github.com/tfq26/Draco" class="btn" style="background: transparent; border: 1px solid var(--border-color);">View on GitHub</a>
+        <a href="/profile" class="btn">Initialize Sentinel</a>
+        <a href="/monitoring" class="btn btn-secondary">Command Center</a>
       </div>
     </section>
 
-    <div class="container">
-      <section id="features" class="card">
-        <h2 style="margin-bottom: 2rem; font-size: 2rem; color: var(--text-color);">Why Draco?</h2>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 2rem;">
-          <div>
-            <h3 class="feature-title">AI-Powered</h3>
-            <p>Leverages Google Gemini to analyze infrastructure metadata and provide human-readable remediation.</p>
+    <div class="container pb-24">
+      <section id="features" class="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <div class="card group hover:border-red-500/50 transition-colors">
+          <div class="text-red-600 mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
           </div>
-          <div>
-            <h3 class="feature-title">GitOps Driven</h3>
-            <p>Automatically opens Pull Requests to fix misconfigurations. You review, you approve, it deploys.</p>
+          <h3 class="text-xl font-black text-white mb-2 uppercase tracking-wider">AI Analysis</h3>
+          <p class="text-slate-400 text-sm leading-relaxed">Powered by AI with native Tool Use for zero-latency infrastructure reasoning.</p>
+        </div>
+
+        <div class="card group hover:border-red-500/50 transition-colors">
+          <div class="text-red-600 mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
           </div>
-          <div>
-            <h3 class="feature-title">Privacy First</h3>
-            <p>Self-hosted architecture. We never see your data. Your clouds, your keys, your control.</p>
+          <h3 class="text-xl font-black text-white mb-2 uppercase tracking-wider">Cost Optimization</h3>
+          <p class="text-slate-400 text-sm leading-relaxed">Autonomous budget enforcement and multi-cloud cost optimization across Azure and AWS.</p>
+        </div>
+
+        <div class="card group hover:border-red-500/50 transition-colors">
+          <div class="text-red-600 mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+            </svg>
           </div>
+          <h3 class="text-xl font-black text-white mb-2 uppercase tracking-wider">Drift Detection</h3>
+          <p class="text-slate-400 text-sm leading-relaxed">Continuous monitoring for security drift. Automatically heals infrastructure via verified GitOps PRs.</p>
         </div>
       </section>
     </div>
 	</main>
 </Layout>
+
+<style>
+  .text-gradient {
+    background: linear-gradient(to right, #E31B23, #ff4d4d);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .glow-effect {
+    position: absolute;
+    top: 10%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 600px;
+    height: 300px;
+    background: radial-gradient(circle, rgba(227, 27, 35, 0.15) 0%, transparent 70%);
+    filter: blur(60px);
+    z-index: -1;
+  }
+</style>

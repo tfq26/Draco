@@ -18,10 +18,13 @@ function log(service, message, color) {
 async function start() {
     console.log(`${colors.api}--- Starting Draco Autonomous Sentinel System ---${colors.reset}\n`);
 
-    // 1. Cleanup existing processes on port 5020
+    // 1. Cleanup existing processes
     try {
-        log("System", "Cleaning up port 5020...", colors.reset);
-        execSync("lsof -ti:5020 | xargs kill -9 2>/dev/null || true");
+        log("System", "Cleaning up ports 5020, 4321 and stale tunnels...", colors.reset);
+        execSync("lsof -ti:5020,4321 | xargs kill -9 2>/dev/null || true");
+        execSync("killall ngrok 2>/dev/null || true");
+        // Give ngrok and system sockets a moment to realize the session is closed
+        await new Promise(r => setTimeout(r, 2000));
     } catch (e) { }
 
     // 2. Start Draco API
@@ -33,9 +36,9 @@ async function start() {
     apiProc.stdout.on('data', (data) => log("API", data.toString().trim(), colors.api));
     apiProc.stderr.on('data', (data) => log("API-ERR", data.toString().trim(), colors.error));
 
-    // 3. Start Ngrok
+    // 3. Start Ngrok (if not already running through a global agent)
     log("Ngrok", "Launching tunnel...", colors.ngrok);
-    const ngrokProc = spawn('/opt/homebrew/bin/ngrok', ['http', '5020'], { shell: true });
+    const ngrokProc = spawn('/opt/homebrew/bin/ngrok', ['http', '5020', '--log=stdout'], { shell: true });
 
     ngrokProc.stderr.on('data', (data) => log("Ngrok-ERR", data.toString().trim(), colors.error));
 

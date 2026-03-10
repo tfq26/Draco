@@ -66,4 +66,24 @@ public class AWSProvider : ICloudProvider
         }
         return metrics;
     }
+
+    public async Task<IEnumerable<CostRecommendation>> GetCostRecommendationsAsync(string? accessToken = null, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Scanning for AWS cost recommendations...");
+        // Stub for now
+        return await Task.FromResult(new List<CostRecommendation>());
+    }
+
+    public async Task<decimal> GetPriceEstimateAsync(string resourceType, string location, IDictionary<string, string> parameters, string? accessToken = null, CancellationToken cancellationToken = default)
+    {
+        // Use AWS Price List Service
+        return 0;
+    }
+
+    public async Task<bool> StopResourceAsync(string resourceId, string? accessToken = null, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Stopping AWS resource {ResourceId}", resourceId);
+        // Stub for now
+        return await Task.FromResult(true);
+    }
 }

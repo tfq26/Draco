@@ -1,23 +1,28 @@
 @import "tailwindcss";
 
 :root {
-  --obsidian-black: #101010;
-  --pure-spirit-white: #F8F9FA;
-  --dragon-red: #B11116;
+  --obsidian-black: #0A0A0B;
+  --obsidian-soft: #141415;
+  --pure-spirit-white: #FFFFFF;
+  --dragon-red: #E31B23;
+  --dragon-red-glow: rgba(227, 27, 35, 0.4);
+  --glass-bg: rgba(255, 255, 255, 0.03);
+  --glass-border: rgba(255, 255, 255, 0.08);
   --meteo-bronze: #8C5D3E;
-  --destructor-blue: #1A369A;
-  --titanium-silver: #BCC6CC;
-  --gunmetal-grey: #4B5320;
 
   /* Default Dark Mode (Obsidian) */
   --bg-color: var(--obsidian-black);
   --text-color: var(--pure-spirit-white);
   --sub-text-color: #94a3b8;
   --accent-color: var(--dragon-red);
-  --accent-glow: rgba(177, 17, 22, 0.4);
-  --card-bg: rgba(255, 255, 255, 0.03);
-  --border-color: rgba(188, 198, 204, 0.2);
-  --font-main: 'Inter', system-ui, -apple-system, sans-serif;
+  --accent-glow: var(--dragon-red-glow);
+  --card-bg: var(--glass-bg);
+  --border-color: var(--glass-border);
+  --font-main: 'Outfit', 'Inter', system-ui, sans-serif;
+  --radius-xl: 16px;
+  --radius-lg: 12px;
+  --radius-md: 8px;
+  --radius-sm: 4px;
 }
 
 /* Light Mode (Pure Spirit White) */
@@ -140,41 +145,72 @@ nav {
 }
 
 .hero {
-  padding: 8rem 2rem;
+  padding: 10rem 2rem;
   text-align: center;
+  position: relative;
 }
 
 .hero h1 {
-  font-size: 4rem;
+  font-size: clamp(3rem, 10vw, 5rem);
   font-weight: 900;
   margin-bottom: 1.5rem;
-  letter-spacing: -2px;
-  line-height: 1.1;
+  letter-spacing: -3px;
+  line-height: 1;
   color: var(--text-color);
+  text-transform: ;
 }
 
 .hero p {
-  font-size: 1.5rem;
+  font-size: 1.25rem;
   color: var(--sub-text-color);
-  max-width: 600px;
-  margin: 0 auto 2.5rem;
-  font-weight: 500;
+  max-width: 700px;
+  margin: 0 auto 3rem;
+  font-weight: 400;
+  letter-spacing: 0.5px;
+}
+
+.hero-actions {
+  display: flex;
+  gap: 1.5rem;
+  justify-content: center;
 }
 
 .btn {
   background: var(--dragon-red);
   color: white;
-  padding: 0.8rem 2rem;
-  border-radius: 8px;
-  font-weight: 600;
-  box-shadow: 0 4px 14px 0 var(--accent-glow);
-  border: 1px solid var(--meteo-bronze);
+  padding: 1rem 2.5rem;
+  border-radius: var(--radius-sm);
+  font-weight: 800;
+  text-transform: ;
+  letter-spacing: 2px;
+  font-size: 0.85rem;
+  transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  box-shadow: 0 0 20px var(--dragon-red-glow);
+  border: none;
+  cursor: pointer;
+}
+
+.btn:hover {
+  transform: translateY(-5px) scale(1.05);
+  box-shadow: 0 0 40px var(--dragon-red-glow);
+  background: #ff2b34;
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--glass-border);
+  box-shadow: none;
+}
+
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 0 20px rgba(255, 255, 255, 0.1);
 }
 
 .card {
   background: var(--card-bg);
   border: 1px solid var(--border-color);
-  border-radius: 16px;
+  border-radius: var(--radius-lg);
   padding: 2rem;
   margin-top: 4rem;
   backdrop-filter: blur(12px);
@@ -224,7 +260,7 @@ footer {
 .feature-title {
   color: var(--destructor-blue) !important;
   margin-bottom: 0.5rem;
-  text-transform: uppercase;
+  text-transform: ;
   letter-spacing: 1px;
   font-weight: 800;
 }

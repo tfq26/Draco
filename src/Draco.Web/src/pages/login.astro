@@ -1,17 +1,20 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import SignIn from '../components/SignIn.vue';
+import UnifiedAuth from '../components/UnifiedAuth.vue';
 ---
 
-<Layout title="Sign In">
-  <main class="container">
-    <SignIn client:load />
-  </main>
+<Layout title="Sign In | Draco Sentinel">
+	<main class="auth-page">
+		<UnifiedAuth client:load mode="login" />
+	</main>
 </Layout>
 
 <style>
-  .container {
-    padding-top: 4rem;
-    padding-bottom: 4rem;
-  }
+	.auth-page {
+		min-height: calc(100vh - 100px);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding: 2rem;
+	}
 </style>

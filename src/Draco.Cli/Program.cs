@@ -45,20 +45,6 @@ startCommand.SetHandler(async () =>
     }
     AnsiConsole.MarkupLine("[bold blue]Sentinel initialized.[/] Starting monitoring loop...");
 
-    // Start Webhook Listener
-    var webhookLogger = serviceProvider.GetRequiredService<ILogger<TwilioWebhookListener>>();
-    var webhookListener = new TwilioWebhookListener(8080, async message =>
-    {
-        if (message.Equals("Yes", StringComparison.OrdinalIgnoreCase) || message.Equals("Apply", StringComparison.OrdinalIgnoreCase))
-        {
-            AnsiConsole.MarkupLine("[bold green]Approval received via SMS![/] Remediating...");
-            // In a real app, we'd pull the context from a state store (Postgres)
-            await remediationService.RemediateAsync("Underutilized VM detected in scan", "taufeeqali", "Draco-Governance");
-        }
-    }, webhookLogger);
-
-    _ = webhookListener.StartAsync(cts.Token);
-
     // Basic loop for now
     while (!cts.Token.IsCancellationRequested)
     {
@@ -359,4 +345,6 @@ void ConfigureServices(IServiceCollection services, IConfiguration configuration
     services.AddScoped<AlertOrchestrator>();
     services.AddScoped<ResourceDiscoveryService>();
     services.AddScoped<RemediationService>();
+    services.AddScoped<ICostGovernanceService, CostGovernanceService>();
+    services.AddScoped<ITelemetryService, TelemetryService>();
 }

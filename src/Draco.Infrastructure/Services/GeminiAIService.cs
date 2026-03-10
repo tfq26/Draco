@@ -1,7 +1,9 @@
 using System.Text;
 using System.Text.Json;
 using Draco.Application.Interfaces;
+using Draco.Infrastructure.AI;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace Draco.Infrastructure.Services;
@@ -12,12 +14,14 @@ public class GeminiAIService : IAIService
     private readonly ILogger<GeminiAIService> _logger;
     private readonly string _apiKey;
     private readonly string _systemPrompt;
-    private const string ApiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent";
+    private readonly IServiceProvider _serviceProvider;
+    private const string ApiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent";
 
-    public GeminiAIService(HttpClient httpClient, ILogger<GeminiAIService> logger, IConfiguration configuration)
+    public GeminiAIService(HttpClient httpClient, ILogger<GeminiAIService> logger, IConfiguration configuration, IServiceProvider serviceProvider)
     {
         _httpClient = httpClient;
         _logger = logger;
+        _serviceProvider = serviceProvider;
         _apiKey = configuration["Gemini:ApiKey"] ?? configuration["GOOGLE_GEMINI_API_KEY"] ?? "KEY";
         _systemPrompt = LoadSystemPrompt();
     }
@@ -120,7 +124,8 @@ RAW DATA:
             contents = new[]
             {
                 new { parts = new[] { new { text = prompt } } }
-            }
+            },
+            tools = new[] { ToolRegistry.GetToolDefinitions() }
         };
 
         var content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
@@ -136,19 +141,76 @@ RAW DATA:
         var result = await response.Content.ReadAsStringAsync(cancellationToken);
         using var doc = JsonDocument.Parse(result);
         
-        var candidates = doc.RootElement.GetProperty("candidates");
-        if (candidates.GetArrayLength() > 0)
+        if (doc.RootElement.TryGetProperty("candidates", out var candidates) && candidates.GetArrayLength() > 0)
         {
-            var parts = candidates[0].GetProperty("content").GetProperty("parts");
-            foreach (var part in parts.EnumerateArray())
+            var contentElement = candidates[0].GetProperty("content");
+            if (contentElement.TryGetProperty("parts", out var parts))
             {
-                if (part.TryGetProperty("text", out var textElement))
+                foreach (var part in parts.EnumerateArray())
                 {
-                    return textElement.GetString() ?? "No analysis provided.";
+                    if (part.TryGetProperty("functionCall", out var functionCall))
+                    {
+                        var functionName = functionCall.GetProperty("name").GetString();
+                        var args = functionCall.GetProperty("args");
+                        
+                        _logger.LogInformation("Gemini requested tool call: {FunctionName}", functionName);
+                        return await HandleToolCallAsync(functionName!, args, cancellationToken);
+                    }
+
+                    if (part.TryGetProperty("text", out var textElement))
+                    {
+                        return textElement.GetString() ?? "No analysis provided.";
+                    }
                 }
             }
         }
 
         return "No analysis provided.";
+    }
+
+    private async Task<string> HandleToolCallAsync(string name, JsonElement args, CancellationToken cancellationToken)
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var governanceService = scope.ServiceProvider.GetRequiredService<ICostGovernanceService>();
+        var providers = scope.ServiceProvider.GetServices<ICloudProvider>();
+
+        try 
+        {
+            _logger.LogInformation("Executing tool: {Name} with args: {Args}", name, args.GetRawText());
+            
+            switch (name)
+            {
+                case "get_current_spend":
+                    var providerSpend = args.GetProperty("provider").GetString();
+                    var subSpend = args.GetProperty("subscriptionId").GetString();
+                    var spend = await governanceService.GetCurrentSpendAsync(providerSpend!, subSpend!);
+                    return $"The current spend for {providerSpend} ({subSpend}) is ${spend}.";
+
+                case "forecast_monthly_spend":
+                    var providerForecast = args.GetProperty("provider").GetString();
+                    var subForecast = args.GetProperty("subscriptionId").GetString();
+                    var forecast = await governanceService.ForecastMonthlySpendAsync(providerForecast!, subForecast!);
+                    return $"The forecasted spend for {providerForecast} ({subForecast}) this month is ${forecast}.";
+
+                case "stop_resource":
+                    var resourceId = args.GetProperty("resourceId").GetString();
+                    var providerStop = args.GetProperty("provider").GetString();
+                    var cloudProvider = providers.FirstOrDefault(p => p.ProviderName == providerStop);
+                    if (cloudProvider != null)
+                    {
+                        var success = await cloudProvider.StopResourceAsync(resourceId!);
+                        return success ? $"Successfully stopped resource {resourceId}." : $"Failed to stop resource {resourceId}.";
+                    }
+                    return $"Provider {providerStop} not found.";
+
+                default:
+                    return "I'm sorry, that capability is not yet available in Draco. 🐉";
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error executing tool call {Name}", name);
+            return $"Error executing tool call: {ex.Message}";
+        }
     }
 }

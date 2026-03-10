@@ -27,30 +27,64 @@ public class TwilioService : IMessagingService
         TwilioClient.Init(_accountSid, _authToken);
     }
 
+    private string NormalizePhoneNumber(string phone)
+    {
+        Console.WriteLine($"[DEBUG-TWILIO] Normalizing: '{phone}'");
+        if (string.IsNullOrWhiteSpace(phone)) return phone;
+        
+        // Remove all non-numeric characters
+        var numeric = new string(phone.Where(char.IsDigit).ToArray());
+        
+        // Handle US numbers (10 digits) - prepend +1
+        if (numeric.Length == 10) 
+        {
+            var res = $"+1{numeric}";
+            Console.WriteLine($"[DEBUG-TWILIO] Normalized 10-digit to: {res}");
+            return res;
+        }
+        
+        // Handle already prefixed numbers
+        if (phone.StartsWith("+")) return phone;
+        
+        // If it starts with 1 and is 11 digits, prepend +
+        if (numeric.Length == 11 && numeric.StartsWith("1")) 
+        {
+            var res = $"+{numeric}";
+            Console.WriteLine($"[DEBUG-TWILIO] Normalized 11-digit to: {res}");
+            return res;
+        }
+        
+        return phone;
+    }
+
     public async Task SendMessageAsync(string to, string message, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Sending SMS to {To} via Twilio.", to);
+        var normalizedTo = NormalizePhoneNumber(to);
+        Console.WriteLine($"[DEBUG-TWILIO] Sending SMS to {normalizedTo}. From: {_fromNumber}");
+        _logger.LogInformation("Sending SMS to {To} (normalized: {Normalized}) via Twilio.", to, normalizedTo);
         try
         {
             await MessageResource.CreateAsync(
                 body: message,
                 from: new Twilio.Types.PhoneNumber(_fromNumber),
-                to: new Twilio.Types.PhoneNumber(to)
+                to: new Twilio.Types.PhoneNumber(normalizedTo)
             );
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to send SMS to {To}.", to);
-            throw; // Re-throw so the UI knows it failed
+            _logger.LogError(ex, "Failed to send SMS to {To}.", normalizedTo);
+            throw;
         }
     }
 
     public async Task SendWhatsAppMessageAsync(string to, string message, CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Sending WhatsApp to {To} via Twilio.", to);
+        var normalizedTo = NormalizePhoneNumber(to);
+        var formattedTo = normalizedTo.StartsWith("whatsapp:") ? normalizedTo : $"whatsapp:{normalizedTo}";
+        Console.WriteLine($"[DEBUG-TWILIO] Sending WhatsApp to {formattedTo}. From: {_whatsappFromNumber}");
+        _logger.LogInformation("Sending WhatsApp to {To} (normalized: {Normalized}) via Twilio.", to, normalizedTo);
         try
         {
-            var formattedTo = to.StartsWith("whatsapp:") ? to : $"whatsapp:{to}";
             var formattedFrom = _whatsappFromNumber.StartsWith("whatsapp:") ? _whatsappFromNumber : $"whatsapp:{_whatsappFromNumber}";
 
             if (message.Length > 1550)
@@ -66,7 +100,7 @@ public class TwilioService : IMessagingService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to send WhatsApp to {To}.", to);
+            _logger.LogError(ex, "Failed to send WhatsApp to {To}.", formattedTo);
             throw;
         }
     }

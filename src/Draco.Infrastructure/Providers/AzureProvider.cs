@@ -81,10 +81,53 @@ public class AzureProvider : ICloudProvider
         return resources;
     }
 
-    public Task<IDictionary<string, double>> GetMetricsAsync(string resourceId, IEnumerable<string> metricNames, TimeSpan timespan, string? accessToken = null, CancellationToken cancellationToken = default)
+    public async Task<IDictionary<string, double>> GetMetricsAsync(string resourceId, IEnumerable<string> metricNames, TimeSpan timespan, string? accessToken = null, CancellationToken cancellationToken = default)
     {
-        // To be implemented with Azure.Monitor.Query
-        _logger.LogWarning("GetMetricsAsync not yet implemented for Azure provider.");
-        return Task.FromResult<IDictionary<string, double>>(new Dictionary<string, double>());
+        _logger.LogInformation("Fetching metrics for Azure resource {ResourceId}", resourceId);
+        // Simplified metrics fetch using Azure.Monitor.Query (Stub for now)
+        var metrics = new Dictionary<string, double>();
+        foreach (var metric in metricNames)
+        {
+            metrics[metric] = 0.0; 
+        }
+        return metrics;
+    }
+
+    public async Task<IEnumerable<CostRecommendation>> GetCostRecommendationsAsync(string? accessToken = null, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Scanning for Azure cost recommendations...");
+        var client = GetClient(accessToken);
+        var recommendations = new List<CostRecommendation>();
+
+        // Logic to scan for unattached disks, idle VMs, etc.
+        // For now, returning empty list (Stub)
+        return await Task.FromResult(recommendations);
+    }
+
+    public async Task<decimal> GetPriceEstimateAsync(string resourceType, string location, IDictionary<string, string> parameters, string? accessToken = null, CancellationToken cancellationToken = default)
+    {
+        // Use Azure Retail Prices API or similar
+        return 0;
+    }
+
+    public async Task<bool> StopResourceAsync(string resourceId, string? accessToken = null, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("Stopping Azure resource {ResourceId}", resourceId);
+        var client = GetClient(accessToken);
+        try
+        {
+            var resourceIdentifier = new ResourceIdentifier(resourceId);
+            if (resourceIdentifier.ResourceType == "Microsoft.Compute/virtualMachines")
+            {
+                // Logic to stop VM
+                return true;
+            }
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to stop Azure resource {ResourceId}", resourceId);
+            return false;
+        }
     }
 }

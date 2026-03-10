@@ -5,9 +5,15 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="AWSSDK.CloudWatch" Version="4.0.8.1" />
+    <PackageReference Include="AWSSDK.CostExplorer" Version="4.0.11.7" />
+    <PackageReference Include="AWSSDK.EC2" Version="4.0.80.1" />
+    <PackageReference Include="AWSSDK.S3" Version="4.0.18.8" />
+    <PackageReference Include="AWSSDK.SecurityToken" Version="4.0.5.11" />
     <PackageReference Include="Azure.Identity" Version="1.17.1" />
     <PackageReference Include="Azure.Monitor.Query" Version="1.7.1" />
     <PackageReference Include="Azure.ResourceManager" Version="1.13.2" />
+    <PackageReference Include="Azure.ResourceManager.Consumption" Version="1.0.1" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.2">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>

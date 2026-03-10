@@ -2,21 +2,65 @@
 import { onMounted, ref } from 'vue';
 import { authClient } from '../lib/auth';
 
-const session = ref<any>(null);
-const isLoading = ref(true);
+const props = defineProps<{
+    initialSession?: any
+}>();
 
-const checkSession = async () => {
-    try {
-        const { data } = await authClient.getSession();
-        session.value = data;
-    } catch (err) {
-        session.value = null;
-    } finally {
-        isLoading.value = false;
+const isLoggedIn = ref(false);
+const isLoading = ref(true);
+const displayName = ref('');
+const displayInitial = ref('👤');
+const userImage = ref<string | null>(null);
+const userPhone = ref('');
+const preferredChannel = ref('');
+
+const updateState = (user: any) => {
+    if (user) {
+        isLoggedIn.value = true;
+        displayName.value = user.name || user.email || 'User';
+        displayInitial.value = (user.name || user.email || '👤').charAt(0).toUpperCase();
+        userImage.value = user.imageUrl || user.image || user.picture || null;
+        userPhone.value = user.phone || '';
+        preferredChannel.value = user.preferredChannel || 'SMS';
+    } else {
+        isLoggedIn.value = false;
+        displayName.value = '';
+        displayInitial.value = '👤';
+        userImage.value = null;
+        userPhone.value = '';
+        preferredChannel.value = '';
     }
 };
 
+const checkSession = async () => {
+    try {
+        const { data: sessionData } = await authClient.getSession();
+        if (sessionData?.user) {
+            // First set from session for quick load
+            updateState(sessionData.user);
+            
+            // Then fetch full Draco profile for phone/channel/image sync
+            try {
+                const { dracoApiFetch } = await import('../lib/dracoApi');
+                const res = await dracoApiFetch('/api/auth/me');
+                if (res.ok) {
+                    const fullUser = await res.json();
+                    updateState(fullUser);
+                }
+            } catch (e) {
+                console.warn("[AuthStatus] Draco profile sync failed:", e);
+            }
+        } else {
+            isLoggedIn.value = false;
+        }
+    } catch (e) {
+        console.error("[AuthStatus] Session check failed:", e);
+    }
+    isLoading.value = false;
+};
+
 const handleSignOut = async () => {
+    isLoading.value = true;
     await authClient.signOut();
     window.location.href = '/';
 };
@@ -27,63 +71,83 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="auth-status">
+  <div class="auth-wrapper">
     <template v-if="isLoading">
-      <div class="loader-dots"><span></span><span></span><span></span></div>
+      <div class="shimmer"></div>
     </template>
-    <template v-else-if="session">
-      <div class="user-menu">
+    
+    <template v-else-if="isLoggedIn">
+      <div class="user-profile">
         <a href="/profile" class="profile-link">
-          <span class="user-avatar">{{ session.user.name?.[0] || 'O' }}</span>
-          <span class="user-name">{{ session.user.name }}</span>
+          <div class="user-avatar">
+            <img v-if="userImage" :src="userImage" class="avatar-img" alt="Profile" />
+            <span v-else>{{ displayInitial }}</span>
+          </div>
+          <div class="user-meta">
+            <span class="user-name">{{ displayName }}</span>
+          </div>
         </a>
-        <button @click="handleSignOut" class="signout-btn" aria-label="Sign Out">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />
+        <button @click="handleSignOut" class="logout-btn" title="Sign Out">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
+            <line x1="12" y1="2" x2="12" y2="12"></line>
           </svg>
         </button>
       </div>
     </template>
+
     <template v-else>
-      <a href="/login" class="signin-btn">Login</a>
+      <a href="/login" class="signin-btn">
+        <span class="btn-text">Sign In</span>
+        <div class="btn-glow"></div>
+      </a>
     </template>
   </div>
 </template>
 
 <style scoped>
-.auth-status {
+.auth-wrapper {
   display: flex;
   align-items: center;
 }
 
 .signin-btn {
+  position: relative;
   background: var(--dragon-red);
   color: white;
-  padding: 0.6rem 1.2rem;
-  border-radius: 8px;
-  font-weight: 700;
-  font-size: 0.9rem;
-  box-shadow: 0 4px 10px var(--accent-glow);
-  transition: all 0.3s ease;
+  padding: 0.6rem 1.4rem;
+  border-radius: 4px;
+  font-weight: 800;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  border: 1px solid #7c0d11;
+  overflow: hidden;
+  transition: all 0.3s;
+  text-decoration: none;
 }
 
 .signin-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 15px var(--accent-glow);
+  transform: translateY(-1px);
+  box-shadow: 0 5px 15px rgba(177, 17, 22, 0.4);
 }
 
-.user-menu {
+.user-profile {
   display: flex;
   align-items: center;
-  gap: 1.5rem;
+  gap: 1rem;
+  padding: 0.25rem;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-color);
 }
 
 .profile-link {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  color: var(--text-color);
-  font-weight: 600;
+  padding-right: 0.5rem;
+  text-decoration: none;
 }
 
 .user-avatar {
@@ -94,50 +158,64 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
-  font-size: 0.8rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
   font-weight: 900;
-  border: 1px solid var(--meteo-bronze);
+  box-shadow: 0 0 10px rgba(177, 17, 22, 0.3);
+  overflow: hidden;
 }
 
-.signout-btn {
-  background: none;
+.avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.user-meta {
+  display: flex;
+  flex-direction: column;
+  line-height: 1;
+}
+
+.user-name {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-color);
+}
+
+.logout-btn {
+  background: transparent;
   border: none;
-  color: var(--sub-text-color);
+  color: #64748b;
   cursor: pointer;
-  padding: 0.25rem;
+  padding: 0.5rem;
   display: flex;
   align-items: center;
-  transition: color 0.2s ease;
+  border-left: 1px solid var(--border-color);
+  transition: all 0.2s;
 }
 
-.signout-btn svg {
-  width: 20px;
-  height: 20px;
+.logout-btn svg {
+  width: 16px;
+  height: 16px;
 }
 
-.signout-btn:hover {
+.logout-btn:hover {
   color: var(--dragon-red);
+  background: rgba(177, 17, 22, 0.05);
 }
 
-.loader-dots {
-  display: flex;
-  gap: 4px;
+.shimmer {
+  width: 120px;
+  height: 36px;
+  background: linear-gradient(90deg, #1e1e1e 0%, #2a2a2a 50%, #1e1e1e 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+  border-radius: 4px;
 }
 
-.loader-dots span {
-  width: 6px;
-  height: 6px;
-  background: var(--sub-text-color);
-  border-radius: 50%;
-  animation: dot-pulse 1.4s infinite ease-in-out both;
-}
-
-.loader-dots span:nth-child(1) { animation-delay: -0.32s; }
-.loader-dots span:nth-child(2) { animation-delay: -0.16s; }
-
-@keyframes dot-pulse {
-  0%, 80%, 100% { transform: scale(0); }
-  40% { transform: scale(1.0); }
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
 }
 </style>

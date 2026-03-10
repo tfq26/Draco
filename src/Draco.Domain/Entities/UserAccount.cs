@@ -8,7 +8,10 @@ public class UserAccount
     public string Phone { get; set; } = string.Empty; // Primary key is the phone number
     public string Name { get; set; } = string.Empty;
     public string? Email { get; set; }
+    public string? ImageUrl { get; set; }
+    public string? PreferredChannel { get; set; } = "SMS"; // "SMS" or "WhatsApp"
     public string? AuthId { get; set; }
+    public string? PasswordHash { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset LastSeenAt { get; set; } = DateTimeOffset.UtcNow;
 

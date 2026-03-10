@@ -14,19 +14,20 @@
     "@astrojs/react": "^4.4.2",
     "@astrojs/vercel": "^9.0.4",
     "@astrojs/vue": "^5.1.4",
+    "@neondatabase/neon-js": "^0.2.0-beta.1",
     "@tailwindcss/vite": "^4.2.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "apexcharts": "^5.10.3",
     "astro": "^5.17.3",
     "autoprefixer": "^10.4.24",
-    "better-auth": "^1.4.19",
     "dotenv": "^17.3.1",
-    "drizzle-orm": "^0.45.1",
     "postcss": "^8.5.6",
     "postgres": "^3.4.8",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "tailwindcss": "^4.2.0",
-    "vue": "^3.5.28"
+    "vue": "^3.5.28",
+    "vue3-apexcharts": "^1.11.1"
   }
 }
