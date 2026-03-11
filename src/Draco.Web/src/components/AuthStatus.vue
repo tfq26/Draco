@@ -36,21 +36,26 @@ const checkSession = async () => {
     try {
         const { data: sessionData } = await authClient.getSession();
         if (sessionData?.user) {
-            // First set from session for quick load
+            console.log("[AuthStatus] Neon session found for:", sessionData.user.email);
             updateState(sessionData.user);
             
             // Then fetch full Draco profile for phone/channel/image sync
             try {
+                console.log("[AuthStatus] Syncing with Draco API...");
                 const { dracoApiFetch } = await import('../lib/dracoApi');
                 const res = await dracoApiFetch('/api/auth/me');
                 if (res.ok) {
                     const fullUser = await res.json();
+                    console.log("[AuthStatus] Draco profile sync complete.");
                     updateState(fullUser);
+                } else {
+                    console.warn("[AuthStatus] Draco API returned status:", res.status);
                 }
             } catch (e) {
                 console.warn("[AuthStatus] Draco profile sync failed:", e);
             }
         } else {
+            console.log("[AuthStatus] No active Neon session.");
             isLoggedIn.value = false;
         }
     } catch (e) {

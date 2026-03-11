@@ -1,9 +1,18 @@
 import { authClient } from "./auth";
 const apiBaseUrl = import.meta.env.PUBLIC_DRACO_API_URL || "http://localhost:5020";
 
+if (import.meta.env.PROD && !import.meta.env.PUBLIC_DRACO_API_URL) {
+  console.error("[CRITICAL] PUBLIC_DRACO_API_URL is not set in production. Networking will fail.");
+}
+
 let cachedApiToken: string | null = null;
 
-export const getDracoApiBaseUrl = () => apiBaseUrl;
+export const getDracoApiBaseUrl = () => {
+    if (!apiBaseUrl) {
+        console.warn("[WARNING] PUBLIC_DRACO_API_URL is undefined.");
+    }
+    return apiBaseUrl;
+};
 
 export async function getDracoApiToken(forceRefresh = false): Promise<string> {
   if (!forceRefresh && cachedApiToken) {

@@ -108,9 +108,14 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+else 
+{
+    // In production (Railway/Vercel), HTTPS is usually handled by the edge proxy.
+    // UseHttpsRedirection can sometimes cause loops if the proxy-to-app link is HTTP.
+    // app.UseHttpsRedirection(); 
+}
 
 app.UseCors("AllowAll");
-app.UseHttpsRedirection();
 
 app.UseAuthentication();
 app.UseAuthorization();
@@ -301,15 +306,18 @@ app.MapGet("/api/auth/local/verify", async (string code, DracoDbContext dbContex
 
 app.MapGet("/api/auth/local/social", (string provider, IConfiguration config) =>
 {
-    var neonAuthUrl = config["NEON_AUTH_URL"];
-    var callbackUrl = "http://localhost:5020/api/auth/local/social/callback";
+    var neonAuthUrl = config["NEON_AUTH_URL"] ?? config["PUBLIC_NEON_AUTH_URL"];
+    var apiBaseUrl = config["DRACO_SERVER_URL"] ?? config["PUBLIC_DRACO_API_URL"] ?? "http://localhost:5020";
+    var callbackUrl = $"{apiBaseUrl.TrimEnd('/')}/api/auth/local/social/callback";
+    
     return Results.Redirect($"{neonAuthUrl}/signin/{provider}?callbackURL={Uri.EscapeDataString(callbackUrl)}");
 });
 
-app.MapGet("/api/auth/local/social/callback", (ILogger<Program> logger) =>
+app.MapGet("/api/auth/local/social/callback", (IConfiguration config, ILogger<Program> logger) =>
 {
     // Bridge redirect back to frontend
-    var frontendSuccessUrl = "http://localhost:4321/profile";
+    var webUrl = config["DRACO_WEB_URL"] ?? "http://localhost:4321";
+    var frontendSuccessUrl = $"{webUrl.TrimEnd('/')}/profile";
     return Results.Redirect(frontendSuccessUrl);
 });
 
@@ -317,12 +325,13 @@ app.MapGet("/api/auth/local/social/callback", (ILogger<Program> logger) =>
 
 app.MapPost("/api/auth/neon/exchange", async (HttpContext context, IConfiguration config, IHttpClientFactory httpClientFactory, ILogger<Program> logger) =>
 {
-    var neonAuthUrl = config["NEON_AUTH_URL"] ?? "https://placeholder-neonauth.aws.neon.tech/neondb/auth";
+    var neonAuthUrl = config["NEON_AUTH_URL"] ?? config["PUBLIC_NEON_AUTH_URL"] ?? "https://placeholder-neonauth.aws.neon.tech/neondb/auth";
     var sessionUrl = $"{neonAuthUrl.TrimEnd('/')}/get-session";
     var client = httpClientFactory.CreateClient();
 
     var cookieHeader = context.Request.Headers["Cookie"].ToString();
-    Console.WriteLine($"[DEBUG] Incoming Cookies: {cookieHeader}");
+    Console.WriteLine($"[DEBUG] Incoming Cookies for Exchange: {(string.IsNullOrEmpty(cookieHeader) ? "NONE" : cookieHeader)}");
+    Console.WriteLine($"[DEBUG] Using Neon Auth URL: {neonAuthUrl}");
 
     string? sessionIdFromBody = null;
     string? jwtTokenFromBody = null;
@@ -361,26 +370,36 @@ app.MapPost("/api/auth/neon/exchange", async (HttpContext context, IConfiguratio
     }
 
     using var request = new HttpRequestMessage(HttpMethod.Get, sessionUrl);
+    
+    // Forward relevant headers from the client browser to Neon
     if (!string.IsNullOrEmpty(cookieHeader))
     {
         request.Headers.TryAddWithoutValidation("Cookie", cookieHeader);
     }
     
-    // Construct session cookie using the ID
-    var sessionValue = sessionIdFromBody ?? jwtTokenFromBody; // Fallback to JWT if ID is missing
+    // Add User-Agent and Origin to look like a legitimate browser request
+    request.Headers.Add("User-Agent", context.Request.Headers["User-Agent"].ToString() ?? "Draco-Backend/1.0");
+    var origin = context.Request.Headers["Origin"].ToString();
+    if (!string.IsNullOrEmpty(origin))
+    {
+        request.Headers.Add("Origin", origin);
+    }
+    
+    // Construct session cookie using the ID as a fallback if the header is stripped by proxy
+    var sessionValue = sessionIdFromBody ?? jwtTokenFromBody; 
     if (!string.IsNullOrEmpty(sessionValue) && !cookieHeader.Contains("session_token"))
     {
         var sessionCookie = $"__Secure-neonauth.session_token={sessionValue}; better-auth.session-token={sessionValue}; __neon_auth_session={sessionValue}";
-        Console.WriteLine($"[DEBUG] Reconstructing session cookies using: {sessionValue.Substring(0, Math.Min(10, sessionValue.Length))}...");
+        Console.WriteLine($"[DEBUG] Polyfilling session cookies using provided ID/Token");
         
-        if (request.Headers.Contains("Cookie"))
-            request.Headers.Remove("Cookie");
+        var currentCookies = request.Headers.Contains("Cookie") ? request.Headers.GetValues("Cookie").FirstOrDefault() : "";
+        var combinedCookie = string.IsNullOrEmpty(currentCookies) ? sessionCookie : $"{currentCookies}; {sessionCookie}";
         
-        var combinedCookie = string.IsNullOrEmpty(cookieHeader) ? sessionCookie : $"{cookieHeader}; {sessionCookie}";
+        if (request.Headers.Contains("Cookie")) request.Headers.Remove("Cookie");
         request.Headers.TryAddWithoutValidation("Cookie", combinedCookie);
     }
     
-    // Use the JWT for Bearer header
+    // Also use Authorization header if provided
     var bearerValue = jwtTokenFromBody ?? sessionIdFromBody;
     if (!string.IsNullOrEmpty(bearerValue))
     {
@@ -393,17 +412,13 @@ app.MapPost("/api/auth/neon/exchange", async (HttpContext context, IConfiguratio
         Console.WriteLine($"[DEBUG] Calling Neon Auth: {sessionUrl}");
         neonResponse = await client.SendAsync(request);
         
-        Console.WriteLine($"[DEBUG] Neon Auth Response Status: {neonResponse.StatusCode}");
-        foreach (var header in neonResponse.Headers)
-        {
-            Console.WriteLine($"[DEBUG] Neon Response Header: {header.Key} = {string.Join(", ", header.Value)}");
-        }
+        Console.WriteLine($"[DEBUG] Neon Auth Response: {neonResponse.StatusCode}");
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"[ERROR] Neon Auth Network Error: {ex.Message}");
+        Console.WriteLine($"[ERROR] Neon Auth Call Failed: {ex.Message}");
         logger.LogError(ex, "Failed to call Neon auth get-session endpoint.");
-        return Results.Problem($"Failed to validate Neon session (Network/SSL): {ex.Message}", statusCode: StatusCodes.Status502BadGateway);
+        return Results.Problem($"Backend communication error: {ex.Message}", statusCode: StatusCodes.Status502BadGateway);
     }
 
     if (!neonResponse.IsSuccessStatusCode)
@@ -557,8 +572,8 @@ app.MapGet("/api/auth/azure", [Authorize] (ClaimsPrincipal user) =>
     if (string.IsNullOrEmpty(authId)) return Results.Unauthorized();
 
     var tenant = "common"; 
-    var clientId = builder.Configuration["AZURE_CLIENT_ID"] ?? "placeholder-client-id";
-    var redirectUri = "http://localhost:5020/api/auth/callback/azure";
+    var apiBaseUrl = builder.Configuration["DRACO_SERVER_URL"] ?? builder.Configuration["PUBLIC_DRACO_API_URL"] ?? "http://localhost:5020";
+    var redirectUri = $"{apiBaseUrl.TrimEnd('/')}/api/auth/callback/azure";
     var scope = "https://management.azure.com/user_impersonation";
     
     var url = $"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize?" +
@@ -724,8 +739,9 @@ app.MapPost("/api/auth/confirm-phone", [Authorize] async ([FromBody] ConfirmPhon
     }
     catch (Exception ex)
     {
+        Console.WriteLine($"[ERROR] Profile update failed: {ex.Message}");
         logger.LogError(ex, "Failed to update phone number from {Old} to {New}", oldPhone, newPhone);
-        return Results.Problem("An error occurred while updating your profile.");
+        return Results.Problem("An error occurred while updating your profile. Details: " + ex.Message);
     }
 });
 
@@ -1033,7 +1049,7 @@ string GenerateJwt(string subject, string? email, string? name, IConfiguration c
 
     var token = new System.IdentityModel.Tokens.Jwt.JwtSecurityToken(
         claims: claims,
-        expires: DateTime.Now.AddDays(7),
+        expires: DateTime.UtcNow.AddDays(7),
         signingCredentials: creds
     );
 
