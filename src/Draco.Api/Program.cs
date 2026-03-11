@@ -240,7 +240,7 @@ using (var scope = app.Services.CreateScope())
 // Endpoints
 
 // Ingest Data from CLI (Thin Client)
-app.MapPost("/api/ingest", async ([FromBody] object cloudData, ILogger<Program> logger) =>
+app.MapPost("/api/ingest", ([FromBody] object cloudData, ILogger<Program> logger) =>
 {
     logger.LogInformation("Received cloud resource data from CLI.");
     return Results.Ok(new { message = "Data ingested successfully." });
@@ -571,7 +571,8 @@ app.MapGet("/api/auth/azure", [Authorize] (ClaimsPrincipal user) =>
     var authId = user.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? user.FindFirst("sub")?.Value;
     if (string.IsNullOrEmpty(authId)) return Results.Unauthorized();
 
-    var tenant = "common"; 
+    var tenant = "common";
+    var clientId = builder.Configuration["AZURE_CLIENT_ID"] ?? "placeholder-client-id";
     var apiBaseUrl = builder.Configuration["DRACO_SERVER_URL"] ?? builder.Configuration["PUBLIC_DRACO_API_URL"] ?? "http://localhost:5020";
     var redirectUri = $"{apiBaseUrl.TrimEnd('/')}/api/auth/callback/azure";
     var scope = "https://management.azure.com/user_impersonation";
