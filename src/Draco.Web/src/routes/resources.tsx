@@ -196,7 +196,7 @@ function Resources() {
       const costA = preferredRollupIds.has(left.id) ? left.monthlyCost : -1
       const costB = preferredRollupIds.has(right.id) ? right.monthlyCost : -1
       if (costA !== costB) return costB - costA
-      
+
       return left.name.localeCompare(right.name)
     })
 
@@ -288,8 +288,8 @@ function Resources() {
 
   const renderSortIcon = (field: 'monthlyCost' | 'location' | 'provider') => {
     if (sortConfig.field !== field) return <ArrowUpDown size={12} style={{ opacity: 0.2, marginLeft: '0.4rem' }} />
-    return sortConfig.direction === 'asc' 
-      ? <ChevronUp size={12} style={{ marginLeft: '0.4rem', color: 'var(--primary)' }} /> 
+    return sortConfig.direction === 'asc'
+      ? <ChevronUp size={12} style={{ marginLeft: '0.4rem', color: 'var(--primary)' }} />
       : <ChevronDown size={12} style={{ marginLeft: '0.4rem', color: 'var(--primary)' }} />
   }
 
@@ -442,7 +442,7 @@ function Resources() {
 
   const sortedResources = useMemo(() => {
     let items = [...filteredResources]
-    
+
     // If a group is selected, filter to only those resources
     if (selectedGroupKey) {
       items = items.filter(r => {
@@ -483,7 +483,7 @@ function Resources() {
       const costA = preferredRollupIds.has(left.id) ? left.monthlyCost : -1
       const costB = preferredRollupIds.has(right.id) ? right.monthlyCost : -1
       if (costA !== costB) return costB - costA
-      
+
       return left.name.localeCompare(right.name)
     })
 
@@ -567,11 +567,11 @@ function Resources() {
         <div style={{ position: 'sticky', top: '2rem', display: 'flex', flexDirection: 'column', gap: '1.5rem', maxHeight: 'calc(100vh - 4rem)' }}>
           <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
             <div className="micro-label" style={{ marginBottom: '1rem', opacity: 0.5 }}>Account Groups</div>
-            <div style={{ 
-              display: 'flex', 
-              flexDirection: 'column', 
-              gap: '0.4rem', 
-              overflowY: 'auto', 
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.4rem',
+              overflowY: 'auto',
               paddingRight: '0.5rem',
               scrollbarWidth: 'thin',
               scrollbarColor: 'var(--border) transparent'
@@ -661,8 +661,8 @@ function Resources() {
               <thead>
                 <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--border)' }}>
                   <th className="micro-label" style={{ padding: '0.6rem 0.75rem' }}>Asset & Type</th>
-                  <th 
-                    className="micro-label" 
+                  <th
+                    className="micro-label"
                     style={{ padding: '0.6rem 0.75rem', cursor: 'pointer', userSelect: 'none' }}
                     onClick={() => toggleSort('provider')}
                   >
@@ -670,8 +670,8 @@ function Resources() {
                       Provider {renderSortIcon('provider')}
                     </div>
                   </th>
-                  <th 
-                    className="micro-label" 
+                  <th
+                    className="micro-label"
                     style={{ padding: '0.6rem 0.75rem', cursor: 'pointer', userSelect: 'none' }}
                     onClick={() => toggleSort('location')}
                   >
@@ -679,8 +679,8 @@ function Resources() {
                       Region {renderSortIcon('location')}
                     </div>
                   </th>
-                  <th 
-                    className="micro-label" 
+                  <th
+                    className="micro-label"
                     style={{ padding: '0.6rem 0.75rem', textAlign: 'right', cursor: 'pointer', userSelect: 'none' }}
                     onClick={() => toggleSort('monthlyCost')}
                   >
