@@ -1,8 +1,8 @@
 import { createRootRoute, Link, Outlet, useLocation, useNavigate } from '@tanstack/react-router'
 import { TanStackRouterDevtools } from '@tanstack/router-devtools'
-import { Sun, Moon, Settings, LogOut, ChevronDown } from 'lucide-react'
+import { Sun, Moon, Settings, LogOut, ChevronDown, RefreshCcw } from 'lucide-react'
 import { useState, useEffect } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import dracoBlack from '../assets/draco-black.svg'
 import dracoColored from '../assets/draco-colored.svg'
 import { dracoApi } from '../lib/api'
@@ -39,7 +39,7 @@ function RootComponent() {
   }, [theme])
 
   useEffect(() => {
-    const publicPaths = ['/', '/login', '/auth/callback', '/callback']
+    const publicPaths = ['/', '/login', '/auth/callback', '/callback', '/aws-onboarding']
     if (!hasToken && !publicPaths.includes(location.pathname)) {
       void navigate({ to: '/' })
     }
@@ -59,6 +59,15 @@ function RootComponent() {
     await queryClient.invalidateQueries({ queryKey: ['me'] })
     window.location.href = '/login'
   }
+
+  const syncMutation = useMutation({
+    mutationFn: () => dracoApi.cloudConnections.sync(),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['me'] })
+      await queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] })
+      await queryClient.invalidateQueries({ queryKey: ['resources'] })
+    },
+  })
 
   return (
     <>
@@ -95,21 +104,43 @@ function RootComponent() {
             )}
           </div>
           <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-            <button 
-              onClick={toggleTheme}
-              className="btn-secondary" 
-              style={{ 
-                width: '32px', 
-                height: '32px', 
-                padding: 0, 
-                display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'center',
-                borderRadius: 'var(--radius-md)'
-              }}
-            >
-              {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
-            </button>
+            {hasToken && (
+               <button 
+                onClick={() => syncMutation.mutate()}
+                disabled={syncMutation.isPending}
+                className="btn-secondary" 
+                style={{ 
+                  width: '32px', 
+                  height: '32px', 
+                  padding: 0, 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center',
+                  borderRadius: 'var(--radius-md)',
+                  color: syncMutation.isPending ? 'var(--primary)' : 'inherit'
+                }}
+                title="Universal Cloud Sync"
+              >
+                <RefreshCcw size={16} className={syncMutation.isPending ? 'animate-spin' : ''} />
+              </button>
+            )}
+            {!hasToken && (
+              <button 
+                onClick={toggleTheme}
+                className="btn-secondary" 
+                style={{ 
+                  width: '32px', 
+                  height: '32px', 
+                  padding: 0, 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center',
+                  borderRadius: 'var(--radius-md)'
+                }}
+              >
+                {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
+              </button>
+            )}
             {hasToken && <NotificationDrawer />}
             {hasToken ? (
               <div style={{ position: 'relative' }}>
@@ -138,10 +169,24 @@ function RootComponent() {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    color: 'var(--muted-foreground)',
-                    fontSize: '0.75rem',
-                    fontWeight: 600,
-                  }}>{initials}</div>
+                    overflow: 'hidden'
+                  }}>
+                    {currentUser?.imageUrl ? (
+                      <img 
+                        src={currentUser.imageUrl} 
+                        alt="Avatar" 
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                      />
+                    ) : (
+                      <span style={{ 
+                        fontSize: '0.75rem', 
+                        fontWeight: 600, 
+                        color: 'var(--muted-foreground)' 
+                      }}>
+                        {initials}
+                      </span>
+                    )}
+                  </div>
                   <ChevronDown size={14} color="var(--muted)" style={{ transform: isUserMenuOpen ? 'rotate(180) translateY(-1px)' : 'none', transition: 'transform 0.2s' }} />
                 </button>
 

@@ -1,7 +1,11 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Claims;
+using System.Text;
 using System.Text.Json;
+using Amazon;
+using Amazon.SecurityToken;
+using Amazon.SecurityToken.Model;
 using Azure.Core;
 using Azure.ResourceManager;
 using Draco.Application.Interfaces;
@@ -30,6 +34,9 @@ public static class CloudConnectionEndpoints
 
         group.MapPost("/azure/exchange", ExchangeAzureCodeAsync)
             .WithName("ExchangeAzureCode");
+
+        group.MapGet("/aws/bootstrap", GetAwsBootstrapAsync)
+            .WithName("GetAwsBootstrap");
 
         group.MapPost("/", UpsertConnectionAsync)
             .WithName("UpsertCloudConnection");
@@ -172,6 +179,16 @@ public static class CloudConnectionEndpoints
 
         var provider = AuthEndpoints.NormalizeProvider(request.Provider);
         var subscriptionId = request.SubscriptionId.Trim();
+        var authType = ResolveConnectionAuthType(provider, request.AuthType, request.AccessToken);
+
+        if (string.Equals(provider, "AWS", StringComparison.OrdinalIgnoreCase))
+        {
+            var validationMessage = ValidateAwsConnectionRequest(request, authType);
+            if (!string.IsNullOrWhiteSpace(validationMessage))
+            {
+                return Results.BadRequest(new { message = validationMessage });
+            }
+        }
 
         var connection = user.Connections.FirstOrDefault(existing =>
             existing.Provider == provider &&
@@ -185,10 +202,12 @@ public static class CloudConnectionEndpoints
                 Provider = provider,
                 SubscriptionId = subscriptionId,
                 DisplayName = request.DisplayName,
+                AuthType = authType,
                 ExternalAccountId = request.ExternalAccountId,
-                AccessToken = request.AccessToken,
-                RefreshToken = request.RefreshToken,
-                TokenExpiresAt = request.TokenExpiresAt,
+                AwsRoleArn = GetStoredAwsRoleArn(provider, authType, request.AwsRoleArn),
+                AccessToken = GetStoredAccessToken(provider, authType, request.AccessToken),
+                RefreshToken = GetStoredRefreshToken(provider, request.RefreshToken),
+                TokenExpiresAt = GetStoredTokenExpiresAt(provider, request.TokenExpiresAt),
                 ConnectedAt = DateTimeOffset.UtcNow,
                 IsActive = true,
                 SyncStatus = "Pending"
@@ -199,16 +218,65 @@ public static class CloudConnectionEndpoints
         else
         {
             connection.DisplayName = request.DisplayName ?? connection.DisplayName;
+            connection.AuthType = authType ?? connection.AuthType;
             connection.ExternalAccountId = request.ExternalAccountId ?? connection.ExternalAccountId;
-            connection.AccessToken = request.AccessToken ?? connection.AccessToken;
-            connection.RefreshToken = request.RefreshToken ?? connection.RefreshToken;
-            connection.TokenExpiresAt = request.TokenExpiresAt ?? connection.TokenExpiresAt;
+            connection.AwsRoleArn = GetUpdatedAwsRoleArn(provider, authType, request.AwsRoleArn, connection.AwsRoleArn);
+            connection.AccessToken = GetUpdatedAccessToken(provider, authType, request.AccessToken, connection.AccessToken);
+            connection.RefreshToken = GetUpdatedRefreshToken(provider, request.RefreshToken, connection.RefreshToken);
+            connection.TokenExpiresAt = GetUpdatedTokenExpiresAt(provider, request.TokenExpiresAt, connection.TokenExpiresAt);
             connection.IsActive = request.IsActive ?? connection.IsActive;
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
         return Results.Ok(ToConnectionDto(connection));
+    }
+
+    private static async Task<IResult> GetAwsBootstrapAsync(
+        [FromQuery] string? accountId,
+        [FromQuery] string? roleName,
+        ClaimsPrincipal userPrincipal,
+        DracoDbContext dbContext,
+        IConfiguration configuration,
+        CancellationToken cancellationToken)
+    {
+        var user = await userPrincipal.GetCurrentUserAsync(dbContext, cancellationToken);
+        if (user is null)
+        {
+            return Results.Unauthorized();
+        }
+
+        if (string.IsNullOrWhiteSpace(accountId) || accountId.Length != 12 || !accountId.All(char.IsDigit))
+        {
+            return Results.BadRequest(new { message = "A valid 12-digit AWS account ID is required." });
+        }
+
+        var trustedPrincipalArn = configuration["AWS_ASSUME_ROLE_PRINCIPAL_ARN"];
+        if (string.IsNullOrWhiteSpace(trustedPrincipalArn))
+        {
+            trustedPrincipalArn = await ResolveAwsTrustedPrincipalArnAsync(cancellationToken);
+        }
+
+        if (string.IsNullOrWhiteSpace(trustedPrincipalArn))
+        {
+            return Results.Problem(
+                "Draco could not determine the AWS principal to trust for cross-account role access. Configure AWS runtime credentials or set AWS_ASSUME_ROLE_PRINCIPAL_ARN on the API.",
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
+
+        var suggestedRoleName = SanitizeAwsRoleName(roleName, user.Id);
+        var externalId = BuildAwsExternalId(user.Id, accountId);
+        var suggestedRoleArn = $"arn:aws:iam::{accountId}:role/{suggestedRoleName}";
+
+        return Results.Ok(new AwsBootstrapResponse(
+            AccountId: accountId,
+            TrustedPrincipalArn: trustedPrincipalArn,
+            ExternalId: externalId,
+            SuggestedRoleName: suggestedRoleName,
+            SuggestedRoleArn: suggestedRoleArn,
+            TrustPolicyJson: BuildAwsTrustPolicyJson(trustedPrincipalArn, externalId),
+            PermissionsPolicyJson: BuildAwsPermissionsPolicyJson(),
+            TerraformTemplate: BuildAwsTerraformTemplate(trustedPrincipalArn, externalId, suggestedRoleName)));
     }
 
     private static async Task<IResult> DeleteConnectionAsync(
@@ -287,17 +355,12 @@ public static class CloudConnectionEndpoints
 
             try
             {
-                var accessToken = connection.AccessToken;
-
-                if (string.Equals(connection.Provider, "Azure", StringComparison.OrdinalIgnoreCase))
-                {
-                    accessToken = await EnsureAzureAccessTokenAsync(
-                        connection,
-                        configuration,
-                        httpClientFactory,
-                        loggerFactory.CreateLogger("AzureOAuthRefresh"),
-                        cancellationToken);
-                }
+                var accessToken = await ResolveProviderAccessTokenAsync(
+                    connection,
+                    configuration,
+                    httpClientFactory,
+                    loggerFactory.CreateLogger("CloudConnectionAccess"),
+                    cancellationToken);
 
                 var resources = (await provider.ListResourcesAsync(accessToken, cancellationToken))
                     .Where(resource =>
@@ -637,7 +700,9 @@ public static class CloudConnectionEndpoints
         provider = connection.Provider,
         subscriptionId = connection.SubscriptionId,
         displayName = connection.DisplayName,
+        authType = connection.AuthType,
         externalAccountId = connection.ExternalAccountId,
+        awsRoleArn = connection.AwsRoleArn,
         isActive = connection.IsActive,
         connectedAt = connection.ConnectedAt,
         lastSyncedAt = connection.LastSyncedAt,
@@ -649,6 +714,193 @@ public static class CloudConnectionEndpoints
         string.IsNullOrWhiteSpace(configuration["AZURE_TENANT_ID"])
             ? "organizations"
             : configuration["AZURE_TENANT_ID"]!.Trim();
+
+    private static string? ValidateAwsConnectionRequest(CloudConnectionRequest request, string? authType)
+    {
+        if (string.Equals(authType, "AwsAssumeRole", StringComparison.OrdinalIgnoreCase))
+        {
+            return string.IsNullOrWhiteSpace(request.AwsRoleArn)
+                ? "AWS assume-role connections require the role ARN you created in your AWS account."
+                : null;
+        }
+
+        if (!string.Equals(authType, "AwsStaticCredentials", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Choose either Assume Role or Access Keys before connecting this AWS account.";
+        }
+
+        if (string.IsNullOrWhiteSpace(request.AccessToken))
+        {
+            return "AWS access-key connections require both an access key ID and secret access key.";
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(request.AccessToken);
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                return "AWS connection payload must be a JSON object.";
+            }
+
+            var accessKeyId = root.TryGetProperty("accessKeyId", out var accessKeyIdValue)
+                ? accessKeyIdValue.GetString()
+                : null;
+            var secretAccessKey = root.TryGetProperty("secretAccessKey", out var secretAccessKeyValue)
+                ? secretAccessKeyValue.GetString()
+                : null;
+
+            return string.IsNullOrWhiteSpace(accessKeyId) || string.IsNullOrWhiteSpace(secretAccessKey)
+                ? "AWS access-key connections require both an access key ID and secret access key."
+                : null;
+        }
+        catch (JsonException)
+        {
+            return "AWS connection payload must be valid JSON generated by the Draco setup flow.";
+        }
+    }
+
+    private static string? ResolveConnectionAuthType(string provider, string? requestedAuthType, string? accessToken)
+    {
+        if (string.Equals(provider, "Azure", StringComparison.OrdinalIgnoreCase))
+        {
+            return "AzureOAuth";
+        }
+
+        if (!string.Equals(provider, "AWS", StringComparison.OrdinalIgnoreCase))
+        {
+            return requestedAuthType;
+        }
+
+        if (!string.IsNullOrWhiteSpace(requestedAuthType))
+        {
+            return requestedAuthType.Trim();
+        }
+
+        if (string.IsNullOrWhiteSpace(accessToken))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(accessToken);
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
+
+            return root.TryGetProperty("kind", out var kindValue)
+                ? kindValue.GetString()
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static string? GetStoredAwsRoleArn(string provider, string? authType, string? awsRoleArn) =>
+        string.Equals(provider, "AWS", StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(authType, "AwsAssumeRole", StringComparison.OrdinalIgnoreCase) &&
+        !string.IsNullOrWhiteSpace(awsRoleArn)
+            ? awsRoleArn.Trim()
+            : null;
+
+    private static string? GetUpdatedAwsRoleArn(string provider, string? authType, string? requestedAwsRoleArn, string? existingAwsRoleArn)
+    {
+        if (!string.Equals(provider, "AWS", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        if (string.Equals(authType, "AwsAssumeRole", StringComparison.OrdinalIgnoreCase))
+        {
+            return string.IsNullOrWhiteSpace(requestedAwsRoleArn)
+                ? existingAwsRoleArn
+                : requestedAwsRoleArn.Trim();
+        }
+
+        return null;
+    }
+
+    private static string? GetStoredAccessToken(string provider, string? authType, string? accessToken) =>
+        string.Equals(provider, "AWS", StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(authType, "AwsAssumeRole", StringComparison.OrdinalIgnoreCase)
+            ? null
+            : accessToken;
+
+    private static string? GetUpdatedAccessToken(string provider, string? authType, string? requestedAccessToken, string? existingAccessToken)
+    {
+        if (string.Equals(provider, "AWS", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(authType, "AwsAssumeRole", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return requestedAccessToken ?? existingAccessToken;
+    }
+
+    private static string? GetStoredRefreshToken(string provider, string? refreshToken) =>
+        string.Equals(provider, "Azure", StringComparison.OrdinalIgnoreCase)
+            ? refreshToken
+            : null;
+
+    private static string? GetUpdatedRefreshToken(string provider, string? requestedRefreshToken, string? existingRefreshToken) =>
+        string.Equals(provider, "Azure", StringComparison.OrdinalIgnoreCase)
+            ? requestedRefreshToken ?? existingRefreshToken
+            : null;
+
+    private static DateTimeOffset? GetStoredTokenExpiresAt(string provider, DateTimeOffset? tokenExpiresAt) =>
+        string.Equals(provider, "Azure", StringComparison.OrdinalIgnoreCase)
+            ? tokenExpiresAt
+            : null;
+
+    private static DateTimeOffset? GetUpdatedTokenExpiresAt(string provider, DateTimeOffset? requestedTokenExpiresAt, DateTimeOffset? existingTokenExpiresAt) =>
+        string.Equals(provider, "Azure", StringComparison.OrdinalIgnoreCase)
+            ? requestedTokenExpiresAt ?? existingTokenExpiresAt
+            : null;
+
+    private static async Task<string?> ResolveProviderAccessTokenAsync(
+        CloudConnection connection,
+        IConfiguration configuration,
+        IHttpClientFactory httpClientFactory,
+        ILogger logger,
+        CancellationToken cancellationToken)
+    {
+        if (string.Equals(connection.Provider, "Azure", StringComparison.OrdinalIgnoreCase))
+        {
+            return await EnsureAzureAccessTokenAsync(
+                connection,
+                configuration,
+                httpClientFactory,
+                logger,
+                cancellationToken);
+        }
+
+        if (string.Equals(connection.Provider, "AWS", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(connection.AuthType, "AwsAssumeRole", StringComparison.OrdinalIgnoreCase))
+        {
+            var accountId = string.IsNullOrWhiteSpace(connection.ExternalAccountId)
+                ? connection.SubscriptionId
+                : connection.ExternalAccountId.Trim();
+
+            if (string.IsNullOrWhiteSpace(connection.AwsRoleArn))
+            {
+                throw new InvalidOperationException("AWS assume-role connection is missing the role ARN. Reconnect this AWS account.");
+            }
+
+            return JsonSerializer.Serialize(new
+            {
+                kind = "AwsAssumeRole",
+                roleArn = connection.AwsRoleArn.Trim(),
+                externalId = BuildAwsExternalId(connection.UserId, accountId)
+            });
+        }
+
+        return connection.AccessToken;
+    }
 
     private static async Task<string?> EnsureAzureAccessTokenAsync(
         CloudConnection connection,
@@ -784,13 +1036,215 @@ public static class CloudConnectionEndpoints
 
         return string.Empty;
     }
+
+    private static async Task<string?> ResolveAwsTrustedPrincipalArnAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var stsClient = new AmazonSecurityTokenServiceClient(RegionEndpoint.USEast1);
+            var identity = await stsClient.GetCallerIdentityAsync(new GetCallerIdentityRequest(), cancellationToken);
+            return NormalizeAwsTrustedPrincipalArn(identity.Arn, identity.Account);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string NormalizeAwsTrustedPrincipalArn(string? arn, string? accountId)
+    {
+        if (string.IsNullOrWhiteSpace(arn))
+        {
+            return string.Empty;
+        }
+
+        const string assumedRoleMarker = ":assumed-role/";
+        var markerIndex = arn.IndexOf(assumedRoleMarker, StringComparison.Ordinal);
+        if (markerIndex < 0)
+        {
+            return arn.Trim();
+        }
+
+        var roleSegment = arn[(markerIndex + assumedRoleMarker.Length)..];
+        var slashIndex = roleSegment.IndexOf('/');
+        var roleName = slashIndex >= 0 ? roleSegment[..slashIndex] : roleSegment;
+        if (string.IsNullOrWhiteSpace(roleName) || string.IsNullOrWhiteSpace(accountId))
+        {
+            return arn.Trim();
+        }
+
+        return $"arn:aws:iam::{accountId}:role/{roleName}";
+    }
+
+    private static string SanitizeAwsRoleName(string? requestedRoleName, Guid userId)
+    {
+        var candidate = string.IsNullOrWhiteSpace(requestedRoleName)
+            ? $"draco-readonly-{userId:N}"[..23]
+            : requestedRoleName.Trim();
+
+        var builder = new StringBuilder(candidate.Length);
+        foreach (var character in candidate)
+        {
+            if (char.IsLetterOrDigit(character) || character is '+' or '=' or ',' or '.' or '@' or '_' or '-')
+            {
+                builder.Append(character);
+            }
+        }
+
+        var sanitized = builder.ToString().Trim('-');
+        if (string.IsNullOrWhiteSpace(sanitized))
+        {
+            sanitized = $"draco-readonly-{userId:N}"[..23];
+        }
+
+        return sanitized.Length <= 64 ? sanitized : sanitized[..64];
+    }
+
+    private static string BuildAwsExternalId(Guid userId, string accountId) =>
+        $"draco-{accountId}-{userId:N}";
+
+    private static string BuildAwsTrustPolicyJson(string trustedPrincipalArn, string externalId) =>
+        $$"""
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": "{{trustedPrincipalArn}}"
+              },
+              "Action": "sts:AssumeRole",
+              "Condition": {
+                "StringEquals": {
+                  "sts:ExternalId": "{{externalId}}"
+                }
+              }
+            }
+          ]
+        }
+        """;
+
+    private static string BuildAwsPermissionsPolicyJson() =>
+        """
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": [
+                "budgets:Describe*",
+                "ce:GetCostAndUsage",
+                "ce:GetCostAndUsageWithResources",
+                "ce:GetCostForecast",
+                "ce:GetDimensionValues",
+                "cloudwatch:GetMetricData",
+                "cloudwatch:ListMetrics",
+                "ec2:Describe*",
+                "s3:GetBucketLocation",
+                "s3:ListAllMyBuckets",
+                "sts:GetCallerIdentity"
+              ],
+              "Resource": "*"
+            }
+          ]
+        }
+        """;
+
+    private static string BuildAwsTerraformTemplate(
+        string trustedPrincipalArn,
+        string externalId,
+        string roleName) =>
+        $$"""
+        terraform {
+          required_version = ">= 1.5.0"
+
+          required_providers {
+            aws = {
+              source  = "hashicorp/aws"
+              version = "~> 5.0"
+            }
+          }
+        }
+
+        data "aws_caller_identity" "current" {}
+
+        locals {
+          draco_role_name = "{{roleName}}"
+          draco_external_id = "{{externalId}}"
+          draco_trusted_principal_arn = "{{trustedPrincipalArn}}"
+        }
+
+        resource "aws_iam_role" "draco_readonly" {
+          name = local.draco_role_name
+
+          assume_role_policy = jsonencode({
+            Version = "2012-10-17"
+            Statement = [
+              {
+                Effect = "Allow"
+                Principal = {
+                  AWS = local.draco_trusted_principal_arn
+                }
+                Action = "sts:AssumeRole"
+                Condition = {
+                  StringEquals = {
+                    "sts:ExternalId" = local.draco_external_id
+                  }
+                }
+              }
+            ]
+          })
+        }
+
+        resource "aws_iam_role_policy" "draco_readonly" {
+          name = "draco-readonly-access"
+          role = aws_iam_role.draco_readonly.id
+
+          policy = jsonencode({
+            Version = "2012-10-17"
+            Statement = [
+              {
+                Effect = "Allow"
+                Action = [
+                  "budgets:Describe*",
+                  "ce:GetCostAndUsage",
+                  "ce:GetCostAndUsageWithResources",
+                  "ce:GetCostForecast",
+                  "ce:GetDimensionValues",
+                  "cloudwatch:GetMetricData",
+                  "cloudwatch:ListMetrics",
+                  "ec2:Describe*",
+                  "s3:GetBucketLocation",
+                  "s3:ListAllMyBuckets",
+                  "sts:GetCallerIdentity"
+                ]
+                Resource = "*"
+              }
+            ]
+          })
+        }
+
+        output "draco_role_arn" {
+          value = aws_iam_role.draco_readonly.arn
+        }
+
+        output "aws_account_id" {
+          value = data.aws_caller_identity.current.account_id
+        }
+
+        output "draco_external_id" {
+          value = local.draco_external_id
+        }
+        """;
 }
 
 public sealed record CloudConnectionRequest(
     string Provider,
     string SubscriptionId,
     string? DisplayName,
+    string? AuthType,
     string? ExternalAccountId,
+    string? AwsRoleArn,
     string? AccessToken,
     string? RefreshToken,
     DateTimeOffset? TokenExpiresAt,
@@ -804,6 +1258,15 @@ public sealed record AzureExchangeResponse(
     DateTimeOffset TokenExpiresAt,
     List<AzureSubscriptionOption> Subscriptions);
 public sealed record AzureSubscriptionOption(string SubscriptionId, string DisplayName, string? State);
+public sealed record AwsBootstrapResponse(
+    string AccountId,
+    string TrustedPrincipalArn,
+    string ExternalId,
+    string SuggestedRoleName,
+    string SuggestedRoleArn,
+    string TrustPolicyJson,
+    string PermissionsPolicyJson,
+    string TerraformTemplate);
 
 public sealed class AzureTokenResponse
 {

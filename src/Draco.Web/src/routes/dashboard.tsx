@@ -1,9 +1,12 @@
 import { createRoute } from '@tanstack/react-router'
 import { Route as rootRoute } from './__root'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertCircle, RefreshCcw, Shield, Zap } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { AlertCircle, Shield, Zap } from 'lucide-react'
 import { dracoApi } from '../lib/api'
 import { BarChart } from '../components/charts/DChart'
+import { LoadingScreen } from '../components/LoadingScreen'
+
+import { useNavigate } from '@tanstack/react-router'
 
 export const Route = createRoute({
   getParentRoute: () => rootRoute,
@@ -12,11 +15,11 @@ export const Route = createRoute({
 })
 
 function Dashboard() {
-  const queryClient = useQueryClient()
-  
-  const { data: summary, isLoading, refetch, isRefetching } = useQuery({
+  const navigate = useNavigate()
+
+  const { data: summary, isLoading } = useQuery({
     queryKey: ['dashboard-summary'],
-    queryFn: dracoApi.dashboard.getSummary,
+    queryFn: () => dracoApi.dashboard.getSummary(),
   })
 
   const { data: alerts = [] } = useQuery({
@@ -25,34 +28,8 @@ function Dashboard() {
   })
 
 
-  const syncMutation = useMutation({
-    mutationFn: async () => {
-      if (!summary) {
-        return
-      }
-
-      const connectionIds = summary.connections.map(connection => connection.connectionId)
-      if (connectionIds.length === 0) {
-        return
-      }
-
-      return dracoApi.cloudConnections.sync(connectionIds)
-    },
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] })
-      await queryClient.invalidateQueries({ queryKey: ['monitoring-alerts'] })
-    },
-  })
-
   if (isLoading || !summary) {
-    return (
-      <div className="layout-container" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
-        <div className="animate-pulse" style={{ textAlign: 'center' }}>
-          <Shield size={48} className="text-primary" style={{ marginBottom: '1rem', opacity: 0.5 }} />
-          <p style={{ color: 'var(--muted)' }}>Loading Sentinel Intelligence...</p>
-        </div>
-      </div>
-    )
+    return <LoadingScreen message="Loading your Cloud Environments..." />
   }
 
   const providerCostBreakdown = summary.providerCostBreakdown ?? []
@@ -64,20 +41,20 @@ function Dashboard() {
   const hasCostData = providerCostBreakdown.length > 0 || costBreakdown.length > 0
 
   const costChartData = providerCostBreakdown.length > 0
-    ? providerCostBreakdown.map(item => ({
+    ? providerCostBreakdown.map((item: any) => ({
         x: item.provider,
         y: item.totalAmount,
         metadata: item,
       }))
-    : providerBreakdown.map(item => ({
+    : providerBreakdown.map((item: any) => ({
         x: item.provider,
         y: item.resourceCount,
         metadata: item,
       }))
 
   const resourceGroupChartData = resourceGroupCostBreakdown
-    .filter(item => item.totalAmount > 0)
-    .map(item => ({
+    .filter((item: any) => item.totalAmount > 0)
+    .map((item: any) => ({
       x: item.resourceGroupName,
       y: item.totalAmount,
       metadata: item,
@@ -101,22 +78,6 @@ function Dashboard() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
-          <button 
-            className="btn-secondary" 
-            onClick={() => {
-              if (summary.connections.length > 0) {
-                syncMutation.mutate()
-                return
-              }
-
-              void refetch()
-            }} 
-            disabled={isRefetching || syncMutation.isPending}
-            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
-          >
-            <RefreshCcw size={16} className={isRefetching || syncMutation.isPending ? 'animate-spin' : ''} />
-            {isRefetching || syncMutation.isPending ? 'Syncing...' : 'Force Sync'}
-          </button>
         </div>
       </div>
 
@@ -193,7 +154,13 @@ function Dashboard() {
           </div>
           <div className="card" style={{ padding: '1.5rem', height: '320px', display: 'flex', alignItems: 'center' }}>
             {costChartData.length > 0 ? (
-              <BarChart data={costChartData} height={250} color="var(--primary)" label={chartLabel} />
+              <BarChart 
+                data={costChartData} 
+                height={250} 
+                color="var(--primary)" 
+                label={chartLabel} 
+                onBarClick={(p) => navigate({ to: '/resources', search: (prev: any) => ({ ...prev, provider: p.x, resourceGroup: undefined }) })}
+              />
             ) : (
               <div style={{ color: 'var(--muted)', textAlign: 'center', width: '100%' }}>
                 {summary.connections.length > 0 ? 'Waiting for the first cloud sync result.' : 'Connect a provider to populate the Command Center.'}
@@ -222,7 +189,7 @@ function Dashboard() {
                   background: item.severity === 'Critical' ? 'rgba(255,0,0,0.1)' : 'rgba(255,255,255,0.05)', 
                   color: item.severity === 'Critical' ? 'var(--primary)' : 'var(--muted-foreground)',
                   padding: '2px 6px'
-                }}>{item.severity}</span>
+                }} onClick={() => {}}>{item.severity}</span>
               </div>
             )) : (
               <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--muted)' }}>No active anomalies detected.</div>
@@ -237,7 +204,13 @@ function Dashboard() {
         </div>
         <div className="card" style={{ padding: '1.5rem', height: '360px', display: 'flex', alignItems: 'center' }}>
           {resourceGroupChartData.length > 0 ? (
-            <BarChart data={resourceGroupChartData.slice(0, 20)} height={300} color="var(--primary)" label="Spend by Resource Group" />
+            <BarChart 
+              data={resourceGroupChartData.slice(0, 20)} 
+              height={300} 
+              color="var(--primary)" 
+              label="Spend by Resource Group" 
+              onBarClick={(p) => navigate({ to: '/resources', search: (prev: any) => ({ ...prev, resourceGroup: p.x, provider: undefined }) })}
+            />
           ) : (
             <div style={{ color: 'var(--muted)', textAlign: 'center', width: '100%' }}>
               {summary.connections.length > 0 ? 'Waiting for resource group cost allocations.' : 'Connect a provider to generate cost rollups.'}

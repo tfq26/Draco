@@ -3,14 +3,22 @@ import { Drawer as DrawerPrimitive } from "vaul"
 
 import { cn } from "@/lib/utils"
 
+const DrawerContext = React.createContext<{ direction?: "top" | "bottom" | "left" | "right" }>({
+  direction: "bottom",
+})
+
 const Drawer = ({
   shouldScaleBackground = true,
+  direction = "bottom",
   ...props
-}: React.ComponentProps<typeof DrawerPrimitive.Root>) => (
-  <DrawerPrimitive.Root
-    shouldScaleBackground={shouldScaleBackground}
-    {...props}
-  />
+}: React.ComponentProps<typeof DrawerPrimitive.Root> & { direction?: "top" | "bottom" | "left" | "right" }) => (
+  <DrawerContext.Provider value={{ direction }}>
+    <DrawerPrimitive.Root
+      shouldScaleBackground={shouldScaleBackground}
+      direction={direction}
+      {...props}
+    />
+  </DrawerContext.Provider>
 )
 Drawer.displayName = "Drawer"
 
@@ -35,27 +43,37 @@ DrawerOverlay.displayName = DrawerPrimitive.Overlay.displayName
 const DrawerContent = React.forwardRef<
   React.ElementRef<typeof DrawerPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DrawerPrimitive.Content>
->(({ className, children, ...props }, ref) => (
-  <DrawerPortal>
-    <DrawerOverlay />
-  <DrawerPrimitive.Content
-    ref={ref}
-    className={cn(
-      "fixed inset-y-0 right-0 z-[100] flex h-full w-[85%] flex-col border-l border-border bg-popover shadow-2xl sm:max-w-md",
-      "transition-transform duration-300 ease-in-out",
-      className
-    )}
-    style={{ 
-      opacity: 1,
-      backgroundColor: 'var(--popover)',
-    }}
-    {...props}
-  >
-    <div className="absolute left-[8px] top-1/2 h-16 w-1 -translate-y-1/2 rounded-full bg-muted/20" />
-      {children}
-    </DrawerPrimitive.Content>
-  </DrawerPortal>
-))
+>(({ className, children, ...props }, ref) => {
+  const { direction } = React.useContext(DrawerContext)
+  
+  return (
+    <DrawerPortal>
+      <DrawerOverlay />
+      <DrawerPrimitive.Content
+        ref={ref}
+        className={cn(
+          "fixed z-[100] flex flex-col bg-popover shadow-2xl transition-transform duration-300 ease-in-out",
+          direction === "bottom" && "inset-x-0 bottom-0 mt-24 h-auto rounded-t-2xl",
+          direction === "right" && "inset-y-0 right-0 h-full w-[400px] border-l border-border",
+          className
+        )}
+        style={{ 
+          opacity: 1,
+          backgroundColor: 'var(--popover)',
+        }}
+        {...props}
+      >
+        {direction === "bottom" && (
+          <div className="mx-auto mt-4 h-1.5 w-12 rounded-full bg-muted/20" />
+        )}
+        {direction === "right" && (
+          <div className="absolute left-[8px] top-1/2 h-16 w-1 -translate-y-1/2 rounded-full bg-muted/20" />
+        )}
+        {children}
+      </DrawerPrimitive.Content>
+    </DrawerPortal>
+  )
+})
 DrawerContent.displayName = "DrawerContent"
 
 const DrawerHeader = ({

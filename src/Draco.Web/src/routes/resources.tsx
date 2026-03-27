@@ -3,7 +3,7 @@ import { Route as rootRoute } from './__root'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { dracoApi, formatCurrencyAmount, getCostSourceColor, getCostSourceLabel, type ResourceActionDefinition, type ResourceActionExecutionResult } from '../lib/api'
 import { useEffect, useMemo, useState } from 'react'
-import { Activity, ArrowUpDown, Box, ChevronDown, ChevronUp, Database, Pause, Play, ReceiptText, RefreshCcw, RotateCcw, Search, Server, ShieldCheck, Sparkles, Trash2 } from 'lucide-react'
+import { Activity, ArrowUpDown, Box, ChevronDown, ChevronUp, Database, Pause, Play, ReceiptText, RotateCcw, Search, Server, ShieldCheck, Sparkles, Trash2 } from 'lucide-react'
 import {
   Drawer,
   DrawerClose,
@@ -13,18 +13,38 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from '../components/ui/drawer'
+import { Spinner } from '../components/ui/spinner'
+
+import { useNavigate } from '@tanstack/react-router'
+import { X } from 'lucide-react'
+
+type ResourcesSearch = {
+  provider?: string
+  resourceGroup?: string
+  search?: string
+}
 
 export const ResourcesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/resources',
+  validateSearch: (search: Record<string, unknown>): ResourcesSearch => ({
+    provider: search.provider as string | undefined,
+    resourceGroup: search.resourceGroup as string | undefined,
+    search: search.search as string | undefined,
+  }),
   component: Resources,
 })
 
 function Resources() {
+  const sentinelSearch = ResourcesRoute.useSearch()
+  const navigate = useNavigate()
   const AUTO_SYNC_INTERVAL_MS = 120000
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useState(sentinelSearch.search || '')
   const [selectedResourceId, setSelectedResourceId] = useState<string | null>(null)
-  const [selectedGroupKey, setSelectedGroupKey] = useState<string | null>(null)
+  const [selectedGroupKey, setSelectedGroupKey] = useState<string | null>(sentinelSearch.resourceGroup ? `*::*::${sentinelSearch.resourceGroup}` : null)
+  const [isExcludedSectionVisible, setIsExcludedSectionVisible] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
+  const ITEMS_PER_PAGE = 50
   const [lastActionResult, setLastActionResult] = useState<ResourceActionExecutionResult | null>(null)
   const [sortConfig, setSortConfig] = useState<{
     field: 'monthlyCost' | 'location' | 'provider' | null;
@@ -98,7 +118,16 @@ function Resources() {
   })
 
   const filteredResources = useMemo(() => {
-    const items = resources || []
+    let items = resources || []
+    
+    // Apply URL-based filters
+    if (sentinelSearch.provider) {
+      items = items.filter(r => r.provider.toLowerCase() === sentinelSearch.provider?.toLowerCase())
+    }
+    if (sentinelSearch.resourceGroup) {
+      items = items.filter(r => (r.resourceGroupName || 'Ungrouped').toLowerCase() === sentinelSearch.resourceGroup?.toLowerCase())
+    }
+
     if (!search.trim()) return items
     const query = search.trim().toLowerCase()
     return items.filter((resource) =>
@@ -107,7 +136,7 @@ function Resources() {
       resource.provider.toLowerCase().includes(query) ||
       resource.location.toLowerCase().includes(query)
     )
-  }, [resources, search])
+  }, [resources, search, sentinelSearch])
 
   const isActualCostSource = (costSource?: string) =>
     costSource === 'AzureActual' || costSource === 'AwsActual'
@@ -309,6 +338,18 @@ function Resources() {
     return () => window.clearInterval(intervalId)
   }, [connections, syncMutation, AUTO_SYNC_INTERVAL_MS])
 
+  // Sync sidebar selection with URL filter
+  useEffect(() => {
+    if (sentinelSearch.resourceGroup) {
+      const match = groupedResources.find(g => g.resourceGroupName.toLowerCase() === sentinelSearch.resourceGroup?.toLowerCase())
+      if (match) {
+        setSelectedGroupKey(match.key)
+      }
+    } else {
+      setSelectedGroupKey(null)
+    }
+  }, [sentinelSearch.resourceGroup, groupedResources])
+
   const activeResource = resourceDetail?.resource ?? selectedListResource
   const activeCost = resourceDetail?.cost
   const activeCurrency = activeCost?.currency ?? selectedListResource?.currency ?? 'USD'
@@ -434,7 +475,9 @@ function Resources() {
       const subscriptionComparison = left.subscriptionId.localeCompare(right.subscriptionId)
       if (subscriptionComparison !== 0) return subscriptionComparison
 
-      const resourceGroupComparison = (left.resourceGroupName || 'Ungrouped').localeCompare(right.resourceGroupName || 'Ungrouped')
+      const resourceGroupNameA = left.resourceGroupName || 'Ungrouped'
+      const resourceGroupNameB = right.resourceGroupName || 'Ungrouped'
+      const resourceGroupComparison = resourceGroupNameA.localeCompare(resourceGroupNameB)
       if (resourceGroupComparison !== 0) return resourceGroupComparison
 
       const costA = preferredRollupIds.has(left.id) ? left.monthlyCost : -1
@@ -445,26 +488,48 @@ function Resources() {
     })
 
     return items
-  }, [filteredResources, selectedGroupKey, sortConfig])
+  }, [filteredResources, selectedGroupKey, sortConfig, preferredRollupIds])
+
+  const actualResources = useMemo(() => sortedResources.filter(r => preferredRollupIds.has(r.id)), [sortedResources, preferredRollupIds])
+  const excludedResources = useMemo(() => sortedResources.filter(r => !preferredRollupIds.has(r.id)), [sortedResources, preferredRollupIds])
+
+  const paginatedActualResources = useMemo(() => {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE
+    return actualResources.slice(start, start + ITEMS_PER_PAGE)
+  }, [actualResources, currentPage])
+
+  const totalPages = Math.max(1, Math.ceil(actualResources.length / ITEMS_PER_PAGE))
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [selectedGroupKey, search, sentinelSearch.provider, sentinelSearch.resourceGroup])
 
   return (
     <div className="animate-fade-in" style={{ fontFamily: 'Roboto, sans-serif' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '2rem' }}>
         <div>
-          <h2 style={{ fontSize: '1.75rem', fontWeight: 900, letterSpacing: '-0.03em', marginBottom: '0.25rem' }}>Cloud Fleet</h2>
-          <p style={{ color: 'var(--muted)', fontSize: '0.8125rem' }}>Asset inventory and live billing telemetry.</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
+            <h2 style={{ fontSize: '1.75rem', fontWeight: 900, letterSpacing: '-0.03em', margin: 0 }}>Cloud Fleet</h2>
+            {(sentinelSearch.provider || sentinelSearch.resourceGroup) && (
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                {sentinelSearch.provider && (
+                  <span className="badge" style={{ background: 'var(--secondary)', color: 'var(--foreground)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '0.5rem', textTransform: 'none' }}>
+                    {sentinelSearch.provider}
+                    <X size={12} style={{ cursor: 'pointer' }} onClick={() => navigate({ to: '/resources', search: (prev: any) => ({ ...prev, provider: undefined }) })} />
+                  </span>
+                )}
+                {sentinelSearch.resourceGroup && (
+                  <span className="badge" style={{ background: 'var(--secondary)', color: 'var(--foreground)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: '0.5rem', textTransform: 'none' }}>
+                    {sentinelSearch.resourceGroup}
+                    <X size={12} style={{ cursor: 'pointer' }} onClick={() => navigate({ to: '/resources', search: (prev: any) => ({ ...prev, resourceGroup: undefined }) })} />
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+          <p style={{ color: 'var(--muted)', fontSize: '0.8125rem', marginTop: '0.25rem' }}>Asset inventory and live billing telemetry.</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <button
-            className="btn-secondary"
-            type="button"
-            onClick={() => syncMutation.mutate('manual')}
-            disabled={syncMutation.isPending || connections.filter((connection) => connection.isActive).length === 0}
-            style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', whiteSpace: 'nowrap' }}
-          >
-            <RefreshCcw size={14} className={syncMutation.isPending ? 'animate-spin' : ''} />
-            {syncMutation.isPending ? 'Syncing...' : 'Force Sync'}
-          </button>
           <div className="premium-glass" style={{ display: 'flex', alignItems: 'center', padding: '0.4rem 0.75rem', gap: '0.5rem', width: '280px', borderRadius: 'var(--radius-md)' }}>
             <Search size={14} color="var(--muted-foreground)" />
             <input
@@ -512,7 +577,10 @@ function Resources() {
               scrollbarColor: 'var(--border) transparent'
             }}>
               <button
-                onClick={() => setSelectedGroupKey(null)}
+                onClick={() => {
+                  setSelectedGroupKey(null)
+                  navigate({ to: '/resources', search: (prev: any) => ({ ...prev, resourceGroup: undefined }) })
+                }}
                 style={{
                   display: 'flex',
                   justifyContent: 'space-between',
@@ -537,7 +605,10 @@ function Resources() {
               {groupedResources.map(group => (
                 <button
                   key={group.key}
-                  onClick={() => setSelectedGroupKey(group.key)}
+                  onClick={() => {
+                    setSelectedGroupKey(group.key)
+                    navigate({ to: '/resources', search: (prev: any) => ({ ...prev, resourceGroup: group.resourceGroupName }) })
+                  }}
                   style={{
                     display: 'flex',
                     flexDirection: 'column',
@@ -620,7 +691,7 @@ function Resources() {
                 </tr>
               </thead>
               <tbody>
-                {sortedResources.map((resource) => (
+                {paginatedActualResources.map((resource) => (
                   <tr key={resource.id} className="operational-row" onClick={() => setSelectedResourceId(resource.id)} style={{ cursor: 'pointer' }}>
                     <td style={{ padding: '0.6rem 0.75rem' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -636,24 +707,102 @@ function Resources() {
                     </td>
                     <td style={{ padding: '0.6rem 0.75rem', color: 'var(--muted-foreground)' }}>{resource.location}</td>
                     <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>
-                      {preferredRollupIds.has(resource.id) ? (
-                        <div style={{ fontWeight: 800 }}>
-                          {formatResourceAmount(resource.monthlyCost, resource.currency)}
-                        </div>
-                      ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.15rem' }}>
-                          <div style={{ fontWeight: 800, color: 'var(--muted)' }}>Excluded</div>
-                          <div style={{ fontSize: '0.68rem', color: 'var(--muted)' }}>
-                            Est. {formatResourceAmount(resource.monthlyCost, resource.currency)}
-                          </div>
-                        </div>
-                      )}
+                      <div style={{ fontWeight: 800 }}>
+                        {formatResourceAmount(resource.monthlyCost, resource.currency)}
+                      </div>
                     </td>
                   </tr>
                 ))}
+                {paginatedActualResources.length === 0 && (
+                  <tr>
+                    <td colSpan={4} style={{ padding: '3rem', textAlign: 'center', color: 'var(--muted)' }}>No resources found with identified cost values.</td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
+
+          {totalPages > 1 && (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1rem', marginTop: '0.5rem' }}>
+              <button 
+                className="btn-secondary" 
+                disabled={currentPage === 1} 
+                onClick={() => setCurrentPage(p => p - 1)}
+                style={{ fontSize: '0.75rem', padding: '0.35rem 0.75rem' }}
+              >
+                Previous
+              </button>
+              <span className="micro-label" style={{ opacity: 0.6 }}>Page {currentPage} of {totalPages}</span>
+              <button 
+                className="btn-secondary" 
+                disabled={currentPage === totalPages} 
+                onClick={() => setCurrentPage(p => p + 1)}
+                style={{ fontSize: '0.75rem', padding: '0.35rem 0.75rem' }}
+              >
+                Next
+              </button>
+            </div>
+          )}
+
+          {excludedResources.length > 0 && (
+            <div style={{ marginTop: '1rem' }}>
+              <button 
+                onClick={() => setIsExcludedSectionVisible(!isExcludedSectionVisible)}
+                style={{ 
+                  background: 'transparent', 
+                  border: 'none', 
+                  color: 'var(--muted)', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '0.5rem', 
+                  cursor: 'pointer',
+                  padding: 0,
+                  fontSize: '0.75rem',
+                  fontWeight: 600
+                }}
+              >
+                {isExcludedSectionVisible ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                {isExcludedSectionVisible ? 'Hide' : 'Show'} {excludedResources.length} non-billable or estimate-only resources
+              </button>
+
+              {isExcludedSectionVisible && (
+                <div className="operational-surface" style={{ marginTop: '1rem', overflow: 'hidden', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', opacity: 0.8 }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.8125rem' }}>
+                    <thead>
+                      <tr style={{ background: 'rgba(255,255,255,0.01)', borderBottom: '1px solid var(--border)' }}>
+                        <th className="micro-label" style={{ padding: '0.5rem 0.75rem', opacity: 0.4 }}>Asset & Type</th>
+                        <th className="micro-label" style={{ padding: '0.5rem 0.75rem', opacity: 0.4 }}>Provider</th>
+                        <th className="micro-label" style={{ padding: '0.5rem 0.75rem', opacity: 0.4 }}>Region</th>
+                        <th className="micro-label" style={{ padding: '0.5rem 0.75rem', textAlign: 'right', opacity: 0.4 }}>Estimated Cost</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {excludedResources.map((resource) => (
+                        <tr key={resource.id} className="operational-row" onClick={() => setSelectedResourceId(resource.id)} style={{ cursor: 'pointer' }}>
+                          <td style={{ padding: '0.5rem 0.75rem', opacity: 0.7 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                              <div style={{ color: 'var(--muted-foreground)', flexShrink: 0 }}>{getIcon(resource.type)}</div>
+                              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                <span style={{ fontWeight: 700 }}>{resource.name}</span>
+                                <span style={{ fontSize: '0.65rem', color: 'var(--muted)' }}>{resource.type}</span>
+                              </div>
+                            </div>
+                          </td>
+                          <td style={{ padding: '0.5rem 0.75rem' }}>
+                            <span className="badge" style={{ background: 'rgba(255,255,255,0.03)', fontSize: '0.6rem', padding: '0.1rem 0.4rem', opacity: 0.6 }}>{resource.provider}</span>
+                          </td>
+                          <td style={{ padding: '0.5rem 0.75rem', color: 'var(--muted-foreground)', opacity: 0.6 }}>{resource.location}</td>
+                          <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', opacity: 0.6 }}>
+                            <div style={{ fontSize: '0.75rem' }}>{formatResourceAmount(resource.monthlyCost, resource.currency)}</div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -804,7 +953,11 @@ function Resources() {
                             fontSize: '0.78rem',
                           }}
                         >
-                          {getActionIcon(actionDefinition.action)}
+                          {executeActionMutation.isPending && executeActionMutation.variables?.action === actionDefinition.action ? (
+                            <Spinner size={14} className="text-current" />
+                          ) : (
+                            getActionIcon(actionDefinition.action)
+                          )}
                           {actionDefinition.label}
                         </button>
                       ))}

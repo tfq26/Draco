@@ -22,7 +22,9 @@ export interface CloudConnection {
   provider: string
   subscriptionId: string
   displayName?: string
+  authType?: string
   externalAccountId?: string
+  awsRoleArn?: string
   isActive: boolean
   connectedAt: string
   lastSyncedAt?: string
@@ -41,6 +43,17 @@ export interface AzureExchangeResult {
   refreshToken?: string
   tokenExpiresAt: string
   subscriptions: AzureSubscriptionOption[]
+}
+
+export interface AwsBootstrapResult {
+  accountId: string
+  trustedPrincipalArn: string
+  externalId: string
+  suggestedRoleName: string
+  suggestedRoleArn: string
+  trustPolicyJson: string
+  permissionsPolicyJson: string
+  terraformTemplate: string
 }
 
 export interface InsightOverview {
@@ -485,8 +498,20 @@ async function fetchWithAuth<T>(endpoint: string, options: RequestInit = {}): Pr
   }
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: 'API request failed' }))
-    throw new Error(error.message || 'API request failed')
+    const error = await response
+      .json()
+      .catch(async () => ({ message: (await response.text().catch(() => '')).trim() || 'API request failed' }))
+    const message =
+      error.message ||
+      error.detail ||
+      error.title ||
+      (typeof error.errors === 'object' && error.errors !== null
+        ? Object.values(error.errors)
+            .flatMap((value) => Array.isArray(value) ? value : [String(value)])
+            .join(' ')
+        : undefined) ||
+      'API request failed'
+    throw new Error(message)
   }
 
   if (response.status === 204) {
@@ -521,6 +546,10 @@ export const dracoApi = {
   },
   cloudConnections: {
     list: () => fetchWithAuth<CloudConnection[]>('/api/cloud-connections'),
+    getAwsBootstrap: (accountId: string, roleName?: string) =>
+      fetchWithAuth<AwsBootstrapResult>(
+        `/api/cloud-connections/aws/bootstrap?accountId=${encodeURIComponent(accountId)}${roleName ? `&roleName=${encodeURIComponent(roleName)}` : ''}`,
+      ),
     exchangeAzureCode: (data: { code: string; redirectUri: string }) =>
       fetchWithAuth<AzureExchangeResult>('/api/cloud-connections/azure/exchange', {
         method: 'POST',
@@ -530,7 +559,9 @@ export const dracoApi = {
       provider: string
       subscriptionId: string
       displayName?: string
+      authType?: string
       externalAccountId?: string
+      awsRoleArn?: string
       accessToken?: string
       refreshToken?: string
       tokenExpiresAt?: string
@@ -556,7 +587,15 @@ export const dracoApi = {
     createTest: () => fetchWithAuth('/api/notifications/test', { method: 'POST' }),
   },
   dashboard: {
-    getSummary: async () => normalizeDashboardSummary(await fetchWithAuth<DashboardSummary>('/api/dashboard/summary')),
+    getSummary: async (provider?: string, resourceGroup?: string) => {
+      let url = '/api/dashboard/summary'
+      const params = new URLSearchParams()
+      if (provider) params.append('provider', provider)
+      if (resourceGroup) params.append('resourceGroup', resourceGroup)
+      const qs = params.toString()
+      if (qs) url += `?${qs}`
+      return normalizeDashboardSummary(await fetchWithAuth<DashboardSummary>(url))
+    },
     getAiContext: () => fetchWithAuth<{ context: DashboardSummary; modelContext: string }>('/api/ai/context'),
   },
   monitoring: {

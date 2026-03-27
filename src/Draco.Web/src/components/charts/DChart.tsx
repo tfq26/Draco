@@ -44,6 +44,7 @@ interface ChartBaseProps {
   unit?: string
   label?: string
   animate?: boolean
+  onBarClick?: (point: DataPoint) => void
 }
 
 export const LineChart: React.FC<ChartBaseProps> = ({
@@ -192,7 +193,8 @@ export const BarChart: React.FC<ChartBaseProps> = ({
   data,
   height = 200,
   color = 'var(--primary)',
-  label = ''
+  label = '',
+  onBarClick
 }) => {
   const [containerRef, dimensions] = useDimensions<HTMLDivElement>()
   const [hoverIdx, setHoverIdx] = useState<number | null>(null)
@@ -221,7 +223,13 @@ export const BarChart: React.FC<ChartBaseProps> = ({
     <div ref={containerRef} style={{ width: '100%', height, position: 'relative', fontFamily: "'Roboto', sans-serif" }}>
       <svg viewBox={`0 0 ${width} ${svgHeight}`} style={{ width: '100%', height: '100%', overflow: 'visible' }}>
         {bars.map((bar, i) => (
-          <g key={i} onMouseEnter={() => setHoverIdx(i)} onMouseLeave={() => setHoverIdx(null)}>
+          <g 
+            key={i} 
+            onMouseEnter={() => setHoverIdx(i)} 
+            onMouseLeave={() => setHoverIdx(null)}
+            onClick={() => onBarClick?.(bar.raw)}
+            style={{ cursor: onBarClick ? 'pointer' : 'default' }}
+          >
             <rect
               x={bar.x}
               y={bar.y}
@@ -233,7 +241,6 @@ export const BarChart: React.FC<ChartBaseProps> = ({
                 transformOrigin: `${bar.x + bar.w / 2}px ${svgHeight - padding.bottom}px`, 
                 animation: `growBar 1s ${i * 0.05}s forwards cubic-bezier(0.16, 1, 0.3, 1)`, 
                 transform: 'scaleY(0)',
-                cursor: 'pointer',
                 opacity: hoverIdx === null || hoverIdx === i ? 1 : 0.6,
                 transition: 'opacity 0.2s'
               }}

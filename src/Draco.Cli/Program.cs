@@ -130,13 +130,7 @@ initCommand.SetHandler(async () =>
         new SelectionPrompt<string>()
             .Title("Which [bold cyan]Cloud Provider[/] would you like to initialize first?")
             .PageSize(10)
-            .AddChoices(new[] { "Azure", "AWS", "Google Cloud (Coming Soon)" }));
-
-    if (providerType == "Google Cloud (Coming Soon)")
-    {
-        AnsiConsole.MarkupLine("[yellow]Stay tuned! GCP support is in the labs.[/]");
-        return;
-    }
+            .AddChoices(new[] { "Azure", "AWS" }));
 
     if (providerType == "Azure")
     {
