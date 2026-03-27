@@ -3,10 +3,6 @@ using Draco.Domain.Entities;
 using Draco.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using Azure.ResourceManager;
-using Azure.ResourceManager.Consumption;
-using Amazon.CostExplorer;
-using Amazon.CostExplorer.Model;
 
 namespace Draco.Infrastructure.Services;
 
@@ -28,7 +24,21 @@ public class CostGovernanceService : ICostGovernanceService
 
     public async Task<IEnumerable<CostBudget>> GetBudgetsAsync(string? userPhone = null)
     {
-        return await _dbContext.CostBudgets.ToListAsync();
+        var budgets = _dbContext.CostBudgets.AsNoTracking();
+
+        if (string.IsNullOrWhiteSpace(userPhone))
+        {
+            return await budgets.ToListAsync();
+        }
+
+        var userId = await _dbContext.UserAccounts
+            .Where(user => user.Phone == userPhone)
+            .Select(user => user.Id)
+            .FirstOrDefaultAsync();
+
+        return userId == Guid.Empty
+            ? []
+            : await budgets.Where(budget => budget.UserId == userId).ToListAsync();
     }
 
     public async Task<CostBudget> CreateBudgetAsync(CostBudget budget)
@@ -47,17 +57,38 @@ public class CostGovernanceService : ICostGovernanceService
 
     public async Task<decimal> GetCurrentSpendAsync(string provider, string subscriptionId)
     {
-        // This will be called by the individual providers or directly if we have credentials
-        var cloudProvider = _providers.FirstOrDefault(p => p.ProviderName == provider);
-        if (cloudProvider == null) return 0;
+        var normalizedProvider = provider.Trim();
 
-        // Implementation details will vary by provider
-        return 0; // Placeholder
+        return await _dbContext.CloudCostSnapshots
+            .AsNoTracking()
+            .Where(snapshot => snapshot.Provider == normalizedProvider && snapshot.SubscriptionId == subscriptionId)
+            .OrderByDescending(snapshot => snapshot.PeriodEnd)
+            .Select(snapshot => snapshot.Amount)
+            .FirstOrDefaultAsync();
     }
 
     public async Task<decimal> ForecastMonthlySpendAsync(string provider, string subscriptionId)
     {
-        return 0; // Placeholder
+        var now = DateTimeOffset.UtcNow;
+        var dailySnapshots = await _dbContext.CloudCostSnapshots
+            .AsNoTracking()
+            .Where(snapshot =>
+                snapshot.Provider == provider &&
+                snapshot.SubscriptionId == subscriptionId &&
+                snapshot.Granularity == "Daily" &&
+                snapshot.PeriodEnd.Year == now.Year &&
+                snapshot.PeriodEnd.Month == now.Month)
+            .ToListAsync();
+
+        if (dailySnapshots.Count == 0)
+        {
+            return await GetCurrentSpendAsync(provider, subscriptionId);
+        }
+
+        var monthToDate = dailySnapshots.Sum(snapshot => snapshot.Amount);
+        var daysElapsed = Math.Max(1, now.Day);
+        var daysInMonth = DateTime.DaysInMonth(now.Year, now.Month);
+        return Math.Round(monthToDate / daysElapsed * daysInMonth, 2);
     }
 
     public async Task RunCostAnalysisAsync(CancellationToken cancellationToken = default)
@@ -78,5 +109,7 @@ public class CostGovernanceService : ICostGovernanceService
                 _logger.LogError(ex, "Error during cost analysis for {Provider}", provider.ProviderName);
             }
         }
+
+        await Task.CompletedTask;
     }
 }

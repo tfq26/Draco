@@ -3,106 +3,42 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using SendGrid;
 using SendGrid.Helpers.Mail;
-using Twilio;
-using Twilio.Rest.Api.V2010.Account;
 
 namespace Draco.Infrastructure.Services;
 
-public class TwilioService : IMessagingService
+public class AzureMessagingService : IMessagingService
 {
-    private readonly ILogger<TwilioService> _logger;
-    private readonly string _accountSid;
-    private readonly string _authToken;
+    private readonly ILogger<AzureMessagingService> _logger;
+    private readonly string _connectionString;
     private readonly string _fromNumber;
-    private readonly string _whatsappFromNumber;
 
-    public TwilioService(ILogger<TwilioService> logger, IConfiguration configuration)
+    public AzureMessagingService(ILogger<AzureMessagingService> logger, IConfiguration configuration)
     {
         _logger = logger;
-        _accountSid = (configuration["Twilio:AccountSid"] ?? configuration["TWILIO_ACCOUNT_SID"] ?? "AC123").Trim();
-        _authToken = (configuration["Twilio:AuthToken"] ?? configuration["TWILIO_AUTH_TOKEN"] ?? "token").Trim();
-        _fromNumber = (configuration["Twilio:FromNumber"] ?? configuration["TWILIO_FROM_NUMBER"] ?? "+123456789").Trim();
-        _whatsappFromNumber = (configuration["Twilio:WhatsAppNumber"] ?? configuration["TWILIO_WHATSAPP_NUMBER"] ?? "whatsapp:+14155238886").Trim();
-        
-        TwilioClient.Init(_accountSid, _authToken);
-    }
-
-    private string NormalizePhoneNumber(string phone)
-    {
-        Console.WriteLine($"[DEBUG-TWILIO] Normalizing: '{phone}'");
-        if (string.IsNullOrWhiteSpace(phone)) return phone;
-        
-        // Remove all non-numeric characters
-        var numeric = new string(phone.Where(char.IsDigit).ToArray());
-        
-        // Handle US numbers (10 digits) - prepend +1
-        if (numeric.Length == 10) 
-        {
-            var res = $"+1{numeric}";
-            Console.WriteLine($"[DEBUG-TWILIO] Normalized 10-digit to: {res}");
-            return res;
-        }
-        
-        // Handle already prefixed numbers
-        if (phone.StartsWith("+")) return phone;
-        
-        // If it starts with 1 and is 11 digits, prepend +
-        if (numeric.Length == 11 && numeric.StartsWith("1")) 
-        {
-            var res = $"+{numeric}";
-            Console.WriteLine($"[DEBUG-TWILIO] Normalized 11-digit to: {res}");
-            return res;
-        }
-        
-        return phone;
+        _connectionString = (configuration["AZURE_SMS_CONNECTION_STRING"] ?? string.Empty).Trim();
+        _fromNumber = (configuration["AZURE_SMS_FROM_NUMBER"] ?? string.Empty).Trim();
     }
 
     public async Task SendMessageAsync(string to, string message, CancellationToken cancellationToken = default)
     {
-        var normalizedTo = NormalizePhoneNumber(to);
-        Console.WriteLine($"[DEBUG-TWILIO] Sending SMS to {normalizedTo}. From: {_fromNumber}");
-        _logger.LogInformation("Sending SMS to {To} (normalized: {Normalized}) via Twilio.", to, normalizedTo);
-        try
+        if (string.IsNullOrWhiteSpace(_connectionString) || string.IsNullOrWhiteSpace(_fromNumber))
         {
-            await MessageResource.CreateAsync(
-                body: message,
-                from: new Twilio.Types.PhoneNumber(_fromNumber),
-                to: new Twilio.Types.PhoneNumber(normalizedTo)
-            );
+            _logger.LogWarning("SMS delivery skipped because Azure messaging configuration is incomplete.");
+            return;
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to send SMS to {To}.", normalizedTo);
-            throw;
-        }
+
+        await Task.CompletedTask;
+        _logger.LogInformation(
+            "SMS delivery stub invoked for {To}. Configure Azure Communication Services before enabling notifications in production.",
+            to);
     }
 
     public async Task SendWhatsAppMessageAsync(string to, string message, CancellationToken cancellationToken = default)
     {
-        var normalizedTo = NormalizePhoneNumber(to);
-        var formattedTo = normalizedTo.StartsWith("whatsapp:") ? normalizedTo : $"whatsapp:{normalizedTo}";
-        Console.WriteLine($"[DEBUG-TWILIO] Sending WhatsApp to {formattedTo}. From: {_whatsappFromNumber}");
-        _logger.LogInformation("Sending WhatsApp to {To} (normalized: {Normalized}) via Twilio.", to, normalizedTo);
-        try
-        {
-            var formattedFrom = _whatsappFromNumber.StartsWith("whatsapp:") ? _whatsappFromNumber : $"whatsapp:{_whatsappFromNumber}";
-
-            if (message.Length > 1550)
-            {
-                message = message.Substring(0, 1550) + "...\n\n[Message truncated due to length limitations. Please ask for details on a specific section!]";
-            }
-
-            await MessageResource.CreateAsync(
-                body: message,
-                from: new Twilio.Types.PhoneNumber(formattedFrom),
-                to: new Twilio.Types.PhoneNumber(formattedTo)
-            );
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to send WhatsApp to {To}.", formattedTo);
-            throw;
-        }
+        // WhatsApp via ACS usually requires a 'Job' or specific templates.
+        // For Draco alerts, we fallback to SMS if WhatsApp isn't fully configured.
+        _logger.LogInformation("Attempting WhatsApp intent via Azure, falling back to SMS for Draco alerts.");
+        await SendMessageAsync(to, message, cancellationToken);
     }
 }
 

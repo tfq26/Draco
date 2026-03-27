@@ -23,8 +23,8 @@ public class AlertOrchestrator
     {
         _logger.LogInformation("Orchestrating alerts for anomaly: {Anomaly}", anomalyDescription);
 
-        // 1. Send immediate SMS for action
-        await _messagingService.SendMessageAsync(userPhoneNumber, $"Draco Sentinel: {anomalyDescription}. Reply 'Apply' to remediate.", cancellationToken);
+        var dashboardLink = $"https://draco.app/dashboard/alerts/{Guid.NewGuid()}";
+        await _messagingService.SendMessageAsync(userPhoneNumber, $"Draco Alert: {anomalyDescription}. Review and approve here: {dashboardLink}", cancellationToken);
 
         // 2. Send detailed Email report
         await _emailService.SendEmailAsync(userEmail, "Draco Alert: Cloud Anomaly Detected", $"<h3>Draco Sentinel Analysis</h3><p>{anomalyDescription}</p>", cancellationToken);

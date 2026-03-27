@@ -94,7 +94,10 @@ ANALYSIS:
         var prompt = $@"{_systemPrompt}
 
 ---
-TASK: Answer the user's question using the provided infrastructure context.
+TASK: Answer the user's question using only the provided infrastructure context.
+The context is pre-computed by Draco's backend and should be treated as the source of truth.
+Do not invent resources, costs, incidents, remediations, or provider details that are not present.
+If the answer is not fully supported by the context, say what is missing and what workflow should run next.
 
 USER QUESTION: {query}
 

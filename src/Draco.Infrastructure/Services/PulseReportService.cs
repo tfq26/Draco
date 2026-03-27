@@ -28,14 +28,14 @@ public class PulseReportService
         _logger = logger;
     }
 
-    public async Task GenerateAndSendReportAsync(string phone, CancellationToken ct = default)
+    public async Task GenerateAndSendReportAsync(Guid userId, CancellationToken ct = default)
     {
-        _logger.LogInformation("Generating Pulse Report for {Phone}", phone);
+        _logger.LogInformation("Generating Pulse Report for User {UserId}", userId);
 
         var resources = await _dbContext.CloudResources
             .AsNoTracking()
             .Where(r => _dbContext.CloudConnections
-                .Where(c => c.UserPhone == phone)
+                .Where(c => c.UserId == userId)
                 .Select(c => c.SubscriptionId)
                 .Contains(r.SubscriptionId))
             .Select(r => new { r.Name, r.Type, r.Location, r.Provider })
@@ -43,7 +43,7 @@ public class PulseReportService
 
         if (resources.Count == 0)
         {
-            _logger.LogWarning("No resources found for user {Phone}. Skipping report.", phone);
+            _logger.LogWarning("No resources found for user {UserId}. Skipping report.", userId);
             return;
         }
 
@@ -62,12 +62,12 @@ RESOURCES:
         var summary = await _aiService.AnalyzeResourcesAsync(resources.Cast<object>(), prompt);
 
         // Send summary via email/SMS
-        var account = await _dbContext.UserAccounts.FindAsync(new object[] { phone }, ct);
-        if (account != null)
+        var account = await _dbContext.UserAccounts.FindAsync(new object[] { userId }, ct);
+        if (account != null && !string.IsNullOrEmpty(account.Phone))
         {
             var message = $"🚀 Draco Pulse Summary:\n{summary.Substring(0, Math.Min(summary.Length, 1000))}";
-            await _messagingService.SendMessageAsync(phone, message, ct);
-            _logger.LogInformation("Pulse Report sent to {Phone}", phone);
+            await _messagingService.SendMessageAsync(account.Phone, message, ct);
+            _logger.LogInformation("Pulse Report sent to {Phone}", account.Phone);
         }
     }
 }

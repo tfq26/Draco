@@ -1,21 +1,22 @@
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 
 namespace Draco.Cli;
 
-public class TwilioWebhookListener
+public class TelnyxWebhookListener
 {
     private readonly HttpListener _listener;
-    private readonly ILogger<TwilioWebhookListener> _logger;
+    private readonly ILogger<TelnyxWebhookListener> _logger;
     private readonly Func<string, Task> _onMessageReceived;
 
-    public TwilioWebhookListener(int port, Func<string, Task> onMessageReceived, ILogger<TwilioWebhookListener> logger)
+    public TelnyxWebhookListener(int port, Func<string, Task> onMessageReceived, ILogger<TelnyxWebhookListener> logger)
     {
         _logger = logger;
         _onMessageReceived = onMessageReceived;
         _listener = new HttpListener();
-        _listener.Prefixes.Add($"http://*:{port}/webhook/twilio/");
+        _listener.Prefixes.Add($"http://*:{port}/webhook/telnyx/");
     }
 
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -23,7 +24,7 @@ public class TwilioWebhookListener
         try
         {
             _listener.Start();
-            _logger.LogInformation("Twilio Webhook Listener started on port {Port}.", _listener.Prefixes.First());
+            _logger.LogInformation("Telnyx Webhook Listener started on {Prefix}.", _listener.Prefixes.First());
 
             while (!cancellationToken.IsCancellationRequested)
             {
@@ -47,16 +48,16 @@ public class TwilioWebhookListener
         {
             using var reader = new StreamReader(context.Request.InputStream, context.Request.ContentEncoding);
             var body = await reader.ReadToEndAsync();
-            
-            _logger.LogDebug("Received webhook request: {Body}", body);
 
-            // Twilio sends data as application/x-www-form-urlencoded
-            var parameters = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(body);
-            var messageResult = parameters["Body"].ToString();
+            _logger.LogDebug("Received Telnyx webhook request: {Body}", body);
+
+            // Telnyx V2 Webhook Payload Structure
+            // { "data": { "payload": { "text": "..." } } }
+            var messageResult = ExtractMessageBody(body);
 
             if (!string.IsNullOrEmpty(messageResult))
             {
-                _logger.LogInformation("Incoming message received: {Message}", messageResult);
+                _logger.LogInformation("Incoming message received from Telnyx: {Message}", messageResult);
                 await _onMessageReceived(messageResult);
             }
 
@@ -69,9 +70,34 @@ public class TwilioWebhookListener
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing webhook request.");
+            _logger.LogError(ex, "Error processing Telnyx webhook request.");
             context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
             context.Response.Close();
         }
+    }
+
+    private static string? ExtractMessageBody(string body)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            var root = document.RootElement;
+
+            if (root.TryGetProperty("data", out var data) && 
+                data.TryGetProperty("payload", out var payload) &&
+                payload.TryGetProperty("text", out var text))
+            {
+                return text.GetString();
+            }
+
+            // Fallback
+            if (root.TryGetProperty("text", out var simpleText)) return simpleText.GetString();
+        }
+        catch
+        {
+            // Ignore parse issues
+        }
+
+        return null;
     }
 }
