@@ -11,36 +11,39 @@
 - **🤖 AI-Powered Analysis**: Leverages Google Gemini to analyze resource snapshots and provide natural language reasoning for infrastructure changes.
 - **🛰️ Autonomous Observation**: Continuous discovery and ingestion of cloud resources across multi-provider environments.
 - **🛠️ GitOps Remediation**: Automatically generates Terraform/HCL fixes and opens Pull Requests for human review.
-- **📱 Multi-Channel Alerts**: Real-time notifications via Twilio (SMS) and SendGrid (Email) with interactive approval flows.
+- **📱 Multi-Channel Alerts**: Messaging hooks exist, but the current deployment path is focused on core cloud visibility, workflows, and AI-assisted operations first.
 - **🔒 Privacy-First**: Zero-data-collection architecture. All sensitive data is processed within your controlled environment.
-- **🎨 Premium Governance Portal**: A high-performance Documentation Hub and Changelog system built with Astro and styled with the *Dragon Emperor* (L-Drago) aesthetic.
+- **🖥️ Governance Portal**: A React dashboard for onboarding cloud accounts, reviewing inventory, costs, workflows, and AI insights.
 
 ## 🛠️ Technology Stack
 
-- **Core**: .NET 8 CLI
+- **Core**: .NET 9 API + CLI
 - **AI**: Google Gemini API
-- **Frontend**: Astro (SSR Mode)
+- **Frontend**: React + Vite
 - **Database**: Neon (Serverless PostgreSQL)
-- **Messaging**: Twilio (SMS), SendGrid (Email)
+- **Auth**: WorkOS
+- **Messaging**: Deferred for the main deployment path
 - **Infrastructure**: Terraform / GitOps
 
 ## 🚀 Getting Started
 
 ### 1. Configuration
-Initialize your environment variables by copying the examples:
+Initialize your environment variables by configuring the active app paths:
 ```bash
-cp src/Draco.Cli/.env.example src/Draco.Cli/.env
-cp src/Draco.Web/.env.example src/Draco.Web/.env
+cp src/Draco.Api/.env src/Draco.Api/.env.local 2>/dev/null || true
 ```
 
 ### 2. Database Setup
-Ensure you have a **Neon PostgreSQL** instance available. Update the `NEON_DATABASE_URL` in your `.env` files.
+Ensure you have a **Neon PostgreSQL** instance available and set:
 
-### 3. Launch the Hub
+- `DRACO_DB_MAIN_CONNECTION` for application data
+- `DRACO_DB_RELEASE_CONNECTION` for release/public content if you use it
+
+The active app does not require Neon Auth.
+
+### 3. Launch the App
 ```bash
-cd src/Draco.Web
-npm install
-npm run dev
+bun start-sentinel.js
 ```
 
 ## ⚖️ License

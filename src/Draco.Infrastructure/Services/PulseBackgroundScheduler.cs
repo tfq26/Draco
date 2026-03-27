@@ -31,12 +31,12 @@ public class PulseBackgroundScheduler : BackgroundService
 
                 var now = DateTimeOffset.UtcNow;
                 var pendingSchedules = await dbContext.PulseReportSchedules
-                    .Where(s => s.IsActive && s.NextRunAt <= now)
+                    .Where(s => s.IsActive && s.UserId != Guid.Empty && s.NextRunAt <= now)
                     .ToListAsync(stoppingToken);
 
                 foreach (var schedule in pendingSchedules)
                 {
-                    await reportService.GenerateAndSendReportAsync(schedule.UserPhone, stoppingToken);
+                    await reportService.GenerateAndSendReportAsync(schedule.UserId, stoppingToken);
 
                     schedule.LastSentAt = now;
                     schedule.NextRunAt = schedule.Frequency switch

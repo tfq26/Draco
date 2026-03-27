@@ -30,7 +30,7 @@ Credentials such as OAuth Refresh Tokens and API keys are stored in your private
 Draco does not use a single "Master Key" for all users. Each user's cloud connection is isolated within the database and identified by their unique, verified phone number. Access tokens are never shared between sessions or users.
 
 ### Environment Security
-Master API keys (Twilio, SendGrid, Gemini) are managed exclusively through **Environment Variables** (`.env`). They are never hardcoded and are not accessible via the Draco web interface.
+Master API keys (Vonage, SendGrid, Gemini) are managed exclusively through **Environment Variables** (`.env`). They are never hardcoded and are not accessible via the Draco web interface.
 
 ## 4. Secure Communication
 ### HTTPS/TLS

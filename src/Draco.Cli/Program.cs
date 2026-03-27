@@ -1,4 +1,4 @@
-﻿using System.CommandLine;
+using System.CommandLine;
 using Draco.Application.Interfaces;
 using Draco.Application.Services;
 using Draco.Domain.Repositories;
@@ -36,12 +36,21 @@ startCommand.SetHandler(async () =>
     var discoveryService = serviceProvider.GetRequiredService<ResourceDiscoveryService>();
     var remediationService = serviceProvider.GetRequiredService<RemediationService>();
     var cts = new CancellationTokenSource();
+    // Start Webhook Listener in background
+    var webhookLogger = serviceProvider.GetRequiredService<ILogger<TelnyxWebhookListener>>();
+    var webhookListener = new TelnyxWebhookListener(5050, async msg => {
+        AnsiConsole.MarkupLine($"[bold yellow]Incoming Command:[/] {msg}");
+        // Here you would hook into RemediationService or similar
+    }, webhookLogger);
+    
+    _ = webhookListener.StartAsync(cts.Token);
+    AnsiConsole.MarkupLine("[bold blue]Webhook Listener initialized[/] on port 5050.");
 
     AnsiConsole.Write(new FigletText("Draco").Color(Color.Blue));
     using (var scope = serviceProvider.CreateScope())
     {
         var dbContext = scope.ServiceProvider.GetRequiredService<DracoDbContext>();
-        await dbContext.Database.EnsureCreatedAsync();
+        await dbContext.Database.MigrateAsync();
     }
     AnsiConsole.MarkupLine("[bold blue]Sentinel initialized.[/] Starting monitoring loop...");
 
@@ -287,7 +296,7 @@ statusCommand.SetHandler(() =>
     table.AddColumn("Status");
     table.AddRow("Azure Provider", "[green]Online[/]");
     table.AddRow("AWS Provider", "[green]Online[/]");
-    table.AddRow("Twilio Gateway", "[green]Active[/]");
+    table.AddRow("Azure Messaging Gateway", "[green]Active[/]");
     table.AddRow("Gemini AI Core", "[green]Ready[/]");
     AnsiConsole.Write(table);
 });
@@ -322,15 +331,21 @@ void ConfigureServices(IServiceCollection services, IConfiguration configuration
     
     services.AddLogging(builder =>
     {
+        builder.AddConfiguration(configuration.GetSection("Logging"));
         builder.AddConsole();
-        builder.SetMinimumLevel(LogLevel.Information);
+        // Default to Information if no config is provided, but allow overrides
+        if (!configuration.GetSection("Logging:LogLevel:Default").Exists())
+        {
+            builder.AddFilter("", LogLevel.Information);
+        }
     });
 
     // Configuration - Pull from appsettings.json or environment variables
-    var connectionString = configuration["DRACO_DB_MAIN_CONNECTION"]
+    var connectionString = ConnectionStringNormalizer.Normalize(
+                           configuration["DRACO_DB_MAIN_CONNECTION"]
                            ?? configuration.GetConnectionString("DracoDbContext") 
                            ?? configuration["DRACO_DB_CONNECTION"] 
-                           ?? "Host=localhost;Database=draco;Username=postgres;Password=postgres";
+                           ?? "Host=localhost;Database=draco;Username=postgres;Password=postgres");
 
     services.AddDbContext<DracoDbContext>(options =>
         options.UseNpgsql(connectionString, x => x.UseVector()));
@@ -339,7 +354,7 @@ void ConfigureServices(IServiceCollection services, IConfiguration configuration
     services.AddScoped<IResourceRepository, ResourceRepository>();
     services.AddScoped<ICloudProvider, AzureProvider>();
     services.AddScoped<ICloudProvider, AWSProvider>();
-    services.AddScoped<IMessagingService, TwilioService>();
+    services.AddScoped<IMessagingService, AzureMessagingService>();
     services.AddScoped<IEmailService, SendGridService>();
     services.AddScoped<IGitProvider, GitHubProvider>();
     services.AddScoped<AlertOrchestrator>();

@@ -27,8 +27,15 @@ public class ResourceRepository : IResourceRepository
             }
             else
             {
+                var preservedResourceGroupName = existing.ResourceGroupName;
+
                 // Update properties
                 _dbContext.Entry(existing).CurrentValues.SetValues(resource);
+                if (string.IsNullOrWhiteSpace(resource.ResourceGroupName) && !string.IsNullOrWhiteSpace(preservedResourceGroupName))
+                {
+                    existing.ResourceGroupName = preservedResourceGroupName;
+                }
+
                 existing.DiscoveredAt = DateTimeOffset.UtcNow;
             }
         }

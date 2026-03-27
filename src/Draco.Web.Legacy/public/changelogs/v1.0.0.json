@@ -21,7 +21,7 @@
                         "Support for appsettings.json for defaults",
                         "Full .env file support for secret management",
                         "Environment variable overrides for production parity",
-                        "Hierarchical structure for Twilio, SendGrid, and Gemini keys"
+                        "Hierarchical structure for Vonage, SendGrid, and Gemini keys"
                     ]
                 },
                 {
@@ -64,7 +64,7 @@
                 },
                 {
                     "title": "Multi-Channel Alerts",
-                    "description": "Real-time notifications via Twilio and SendGrid.",
+                    "description": "Real-time notifications via Vonage and SendGrid.",
                     "details": [
                         "Interactive SMS approvals for automated fixes",
                         "Detailed email reports for governance compliance",

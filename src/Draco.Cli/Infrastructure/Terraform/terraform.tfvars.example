@@ -1,0 +1,7 @@
+project_name            = "draco"
+environment             = "dev"
+location                = "East US"
+postgres_admin_login    = "dracoadmin"
+postgres_admin_password = "replace-me"
+allowed_ip_addresses    = ["203.0.113.10"]
+enable_storage_account  = true

@@ -22,7 +22,7 @@ Data collected by Draco is used exclusively for:
 Draco integrates with the following third-party services. Usage of these services is governed by their respective privacy policies:
 - **Google Gemini**: For AI analysis and remediation generation.
 - **GitHub**: For GitOps workflows and Pull Request management.
-- **Twilio**: For SMS-based alerting and approvals.
+- **Vonage**: For SMS/WhatsApp-based alerting and approvals.
 - **SendGrid**: For email notifications.
 
 **Note**: Draco is designed to redact or minimize PII (Personally Identifiable Information) before sending data to AI providers.
