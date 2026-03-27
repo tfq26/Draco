@@ -29,7 +29,9 @@ public class CloudConnection
     public string Provider { get; set; } = string.Empty; // "Azure", "AWS"
     public string SubscriptionId { get; set; } = string.Empty;
     public string? DisplayName { get; set; }
+    public string? AuthType { get; set; }
     public string? ExternalAccountId { get; set; }
+    public string? AwsRoleArn { get; set; }
     public string? AccessToken { get; set; }
     public string? RefreshToken { get; set; }
     public DateTimeOffset? TokenExpiresAt { get; set; }

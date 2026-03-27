@@ -124,14 +124,14 @@ export function NotificationDrawer() {
           )}
         </div>
 
-        <DrawerFooter style={{ borderTop: '1px solid var(--border)', padding: '1.5rem' }}>
+        <DrawerFooter style={{ padding: '1.5rem' }}>
           <DrawerClose asChild>
             <button 
-              className="btn-secondary" 
-              style={{ width: '100%' }}
-              onClick={() => navigate({ to: '/settings' })}
+              className="btn-primary" 
+              style={{ width: '100%', padding: '0.875rem' }}
+              onClick={() => navigate({ to: '/settings', search: { tab: 'notifications' } })}
             >
-              <Settings size={14} /> Notification Settings
+              <Settings size={14} /> Configure Governance
             </button>
           </DrawerClose>
         </DrawerFooter>

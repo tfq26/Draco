@@ -1,34 +1,61 @@
-import { createRoute } from '@tanstack/react-router'
+import { createRoute, useNavigate } from '@tanstack/react-router'
 import { Route as rootRoute } from './__root'
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { User, Bell, Key, Lock, Plus, Loader2, AlertCircle, CheckCircle2, RefreshCcw, Unplug, ShieldCheck } from 'lucide-react'
+import { User, Bell, Key, Lock, Plus, Loader2, AlertCircle, CheckCircle2, RefreshCcw, Unplug, ShieldCheck, Info, Mail, Trash2 } from 'lucide-react'
 import { dracoApi, type AzureSubscriptionOption, type CloudConnection } from '../lib/api'
+import { copyToClipboard, getAwsBootstrapErrorMessage } from '../lib/awsOnboarding'
 import azureLogo from '../assets/azure-logo.svg'
 import awsLogo from '../assets/aws-logo.svg'
-import gcpLogo from '../assets/gcp-logo.svg'
+import { Drawer, DrawerClose, DrawerContent, DrawerDescription, DrawerFooter, DrawerHeader, DrawerTitle } from '../components/ui/drawer'
+import { Spinner } from '../components/ui/spinner'
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+
+type SettingsSearch = {
+  tab?: string
+}
 
 export const SettingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings',
+  validateSearch: (search: Record<string, unknown>): SettingsSearch => {
+    return {
+      tab: search.tab as string | undefined,
+    }
+  },
   component: Settings,
 })
 
 const PROVIDERS = [
   { id: 'Azure', name: 'Azure', description: 'Sign in with Microsoft and pick a subscription.', logo: azureLogo },
   { id: 'AWS', name: 'AWS', description: 'Add another AWS account or environment.', logo: awsLogo },
-  { id: 'GCP', name: 'GCP', description: 'Add another Google Cloud project connection.', logo: gcpLogo },
 ]
 
 function Settings() {
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const [activeTab, setActiveTab] = useState('profile')
+  const search = SettingsRoute.useSearch()
+  const [activeTab, setActiveTab] = useState(search.tab || 'profile')
+
+  useEffect(() => {
+    if (search.tab) {
+      setActiveTab(search.tab)
+    }
+  }, [search.tab])
+
   const [provider, setProvider] = useState<string>('Azure')
   const [subscriptionId, setSubscriptionId] = useState('')
   const [displayName, setDisplayName] = useState('')
-  const [accessToken, setAccessToken] = useState('')
+  const [awsConnectionMode, setAwsConnectionMode] = useState<'assume-role' | 'access-keys'>('assume-role')
+  const [awsRoleArn, setAwsRoleArn] = useState('')
+  const [awsAccessKeyId, setAwsAccessKeyId] = useState('')
+  const [awsSecretAccessKey, setAwsSecretAccessKey] = useState('')
+  const [awsSessionToken, setAwsSessionToken] = useState('')
+  const [copiedAwsValue, setCopiedAwsValue] = useState<string | null>(null)
+  const [isAwsAccountDrawerOpen, setIsAwsAccountDrawerOpen] = useState(false)
+  const [notificationEmails, setNotificationEmails] = useState<string[]>([])
+  const [newEmail, setNewEmail] = useState('')
   const [azureSubscriptions, setAzureSubscriptions] = useState<AzureSubscriptionOption[]>([])
   const [selectedAzureSubscriptionId, setSelectedAzureSubscriptionId] = useState('')
   const [azureTokenBundle, setAzureTokenBundle] = useState<{
@@ -49,12 +76,56 @@ function Settings() {
     [azureSubscriptions, selectedAzureSubscriptionId],
   )
 
+  const inferredAwsConnectionLabel = useMemo(() => {
+    if (!subscriptionId.trim()) {
+      return undefined
+    }
+
+    if (awsConnectionMode === 'assume-role') {
+      const roleName = awsRoleArn.trim().split('/').pop()
+      return roleName ? `AWS ${subscriptionId.trim()} • ${roleName}` : `AWS ${subscriptionId.trim()}`
+    }
+
+    return `AWS ${subscriptionId.trim()}`
+  }, [subscriptionId, awsConnectionMode, awsRoleArn])
+
+  const isAwsAccountIdValid = useMemo(
+    () => /^\d{12}$/.test(subscriptionId.trim()),
+    [subscriptionId],
+  )
+
+  const awsBootstrapQuery = useQuery({
+    queryKey: ['aws-bootstrap-settings', subscriptionId.trim()],
+    queryFn: () => dracoApi.cloudConnections.getAwsBootstrap(subscriptionId.trim()),
+    enabled: provider === 'AWS' && awsConnectionMode === 'assume-role' && isAwsAccountIdValid,
+    staleTime: Infinity,
+    retry: false,
+  })
+
+  const awsBootstrapErrorMessage = useMemo(
+    () => getAwsBootstrapErrorMessage(awsBootstrapQuery.error as Error | null),
+    [awsBootstrapQuery.error],
+  )
+
   const isConnectionReady = useMemo(() => {
     if (provider === 'Azure') {
       return Boolean(selectedAzureSubscriptionId && azureTokenBundle)
     }
-    return subscriptionId.trim().length > 0
-  }, [azureTokenBundle, provider, selectedAzureSubscriptionId, subscriptionId])
+    if (awsConnectionMode === 'assume-role') {
+      return isAwsAccountIdValid && Boolean(awsBootstrapQuery.data) && awsRoleArn.trim().length > 0
+    }
+    return isAwsAccountIdValid && awsAccessKeyId.trim().length > 0 && awsSecretAccessKey.trim().length > 0
+  }, [
+    azureTokenBundle,
+    provider,
+    selectedAzureSubscriptionId,
+    awsConnectionMode,
+    isAwsAccountIdValid,
+    awsBootstrapQuery.data,
+    awsRoleArn,
+    awsAccessKeyId,
+    awsSecretAccessKey,
+  ])
 
   const refreshViews = async () => {
     await queryClient.invalidateQueries({ queryKey: ['me'] })
@@ -80,29 +151,46 @@ function Settings() {
       }
 
       if (!subscriptionId.trim()) {
-        throw new Error('Subscription or project ID is required.')
+        throw new Error('AWS account ID is required.')
+      }
+
+      const awsAccessToken = awsConnectionMode === 'access-keys'
+        ? JSON.stringify({
+            kind: 'AwsStaticCredentials',
+            accessKeyId: awsAccessKeyId.trim(),
+            secretAccessKey: awsSecretAccessKey.trim(),
+            sessionToken: awsSessionToken.trim() || undefined,
+          })
+        : undefined
+
+      if (awsConnectionMode === 'assume-role' && !awsBootstrapQuery.data) {
+        throw new Error('Open the AWS setup guide, create the read-only IAM role, and then paste the role ARN to connect this account.')
       }
 
       return dracoApi.cloudConnections.upsert({
         provider,
         subscriptionId: subscriptionId.trim(),
-        displayName: displayName.trim() || undefined,
-        accessToken: accessToken.trim() || undefined,
+        displayName: inferredAwsConnectionLabel,
+        authType: awsConnectionMode === 'assume-role' ? 'AwsAssumeRole' : 'AwsStaticCredentials',
+        externalAccountId: subscriptionId.trim(),
+        awsRoleArn: awsConnectionMode === 'assume-role' ? awsRoleArn.trim() : undefined,
+        accessToken: awsAccessToken,
       })
     },
     onSuccess: async () => {
+      if (provider === 'AWS') {
+        setIsAwsAccountDrawerOpen(false)
+      }
       await refreshViews()
       if (provider !== 'Azure') {
         setSubscriptionId('')
         setDisplayName('')
-        setAccessToken('')
+        setAwsRoleArn('')
+        setAwsAccessKeyId('')
+        setAwsSecretAccessKey('')
+        setAwsSessionToken('')
       }
     },
-  })
-
-  const syncMutation = useMutation({
-    mutationFn: (connectionId: number) => dracoApi.cloudConnections.sync([connectionId]),
-    onSuccess: refreshViews,
   })
 
   const disconnectMutation = useMutation({
@@ -154,6 +242,28 @@ function Settings() {
     void completeAzureSignIn()
   }, [])
 
+  useEffect(() => {
+    if (user?.email && notificationEmails.length === 0) {
+      setNotificationEmails([user.email])
+    }
+  }, [user?.email])
+
+  useEffect(() => {
+    setAwsRoleArn('')
+  }, [subscriptionId, awsConnectionMode])
+
+  const handleCopyAwsValue = async (key: string, value: string) => {
+    try {
+      await copyToClipboard(value)
+      setCopiedAwsValue(key)
+      window.setTimeout(() => {
+        setCopiedAwsValue((current) => current === key ? null : current)
+      }, 1500)
+    } catch {
+      setCopiedAwsValue(null)
+    }
+  }
+
   const handleAzureSignIn = async () => {
     try {
       setAzureAuthError(null)
@@ -174,7 +284,7 @@ function Settings() {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="flex flex-col items-center gap-4">
-          <Loader2 className="animate-spin text-primary" size={32} />
+          <Spinner className="text-primary" size={32} />
           <p className="text-muted-foreground font-medium">Synchronizing Draco Account...</p>
         </div>
       </div>
@@ -182,71 +292,184 @@ function Settings() {
   }
 
   return (
-    <div className="animate-fade-in" style={{ maxWidth: '1200px', margin: '0 auto', padding: '1rem' }}>
+    <div className="animate-fade-in" style={{ maxWidth: '1000px', margin: '0 auto', padding: '1rem' }}>
       <Tabs defaultValue="profile" value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: '4rem', alignItems: 'start' }}>
-          {/* Left Side Sidebar Navigation */}
-          <div style={{ position: 'sticky', top: '2rem' }}>
-            <div className="micro-label" style={{ marginBottom: '1.5rem', opacity: 0.5 }}>Configuration</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2.5rem' }}>
+          {/* Centered Top Navigation */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
+            <h2 style={{ fontSize: '2.5rem', marginBottom: '0.75rem', fontWeight: 900, letterSpacing: '-0.04em' }}>Settings</h2>
+            <p style={{ color: 'var(--muted-foreground)', fontSize: '1rem', maxWidth: '600px', marginBottom: '2.5rem' }}>
+              Manage your Draco account infrastructure and active cloud connection nodes.
+            </p>
+
             <TabsList style={{ 
               display: 'flex', 
-              flexDirection: 'column', 
-              background: 'var(--card)', 
-              border: '1px solid var(--border)', 
-              padding: '8px', 
+              flexDirection: 'row', 
+              padding: 0, 
               height: 'auto',
-              borderRadius: 'var(--radius-xl)',
-              boxShadow: '0 15px 50px rgba(0,0,0,0.06)',
-              gap: '0.5rem',
-              width: '100%'
+              background: 'transparent',
+              border: 'none',
+              borderBottom: '1px solid var(--border)',
+              gap: '1.5rem',
+              width: '100%',
+              justifyContent: 'center'
             }}>
-              <TabsTrigger value="profile" className="w-full" style={{ justifyContent: 'flex-start', padding: '1rem 1.25rem', borderRadius: 'var(--radius-lg)', fontWeight: 700 }}>
-                <User size={18} style={{ marginRight: '1rem' }} /> Profile
+              <TabsTrigger 
+                value="profile" 
+                className="flex items-center gap-2" 
+                style={{ 
+                  background: 'transparent',
+                  border: 'none',
+                  borderBottom: activeTab === 'profile' ? '2px solid var(--primary)' : '2px solid transparent',
+                  padding: '1rem 0.5rem', 
+                  borderRadius: 0, 
+                  fontWeight: activeTab === 'profile' ? 700 : 500,
+                  fontSize: '0.875rem',
+                  color: activeTab === 'profile' ? 'var(--foreground)' : 'var(--muted-foreground)',
+                  marginBottom: '-1px', // Align with the borderBottom of the TabsList
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <User size={16} /> Profile
               </TabsTrigger>
-              <TabsTrigger value="connections" className="w-full" style={{ justifyContent: 'flex-start', padding: '1rem 1.25rem', borderRadius: 'var(--radius-lg)', fontWeight: 700 }}>
-                <RefreshCcw size={18} style={{ marginRight: '1rem' }} /> Connections
+              <TabsTrigger 
+                value="connections" 
+                className="flex items-center gap-2" 
+                style={{ 
+                  background: 'transparent',
+                  border: 'none',
+                  borderBottom: activeTab === 'connections' ? '2px solid var(--primary)' : '2px solid transparent',
+                  padding: '1rem 0.5rem', 
+                  borderRadius: 0, 
+                  fontWeight: activeTab === 'connections' ? 700 : 500,
+                  fontSize: '0.875rem',
+                  color: activeTab === 'connections' ? 'var(--foreground)' : 'var(--muted-foreground)',
+                  marginBottom: '-1px',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <RefreshCcw size={16} /> Connections
               </TabsTrigger>
-              <TabsTrigger value="security" className="w-full" style={{ justifyContent: 'flex-start', padding: '1rem 1.25rem', borderRadius: 'var(--radius-lg)', fontWeight: 700 }}>
-                <Lock size={18} style={{ marginRight: '1rem' }} /> Security
+              <TabsTrigger 
+                value="security" 
+                className="flex items-center gap-2" 
+                style={{ 
+                  background: 'transparent',
+                  border: 'none',
+                  borderBottom: activeTab === 'security' ? '2px solid var(--primary)' : '2px solid transparent',
+                  padding: '1rem 0.5rem', 
+                  borderRadius: 0, 
+                  fontWeight: activeTab === 'security' ? 700 : 500,
+                  fontSize: '0.875rem',
+                  color: activeTab === 'security' ? 'var(--foreground)' : 'var(--muted-foreground)',
+                  marginBottom: '-1px',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <Lock size={16} /> Security
               </TabsTrigger>
-              <TabsTrigger value="notifications" className="w-full" style={{ justifyContent: 'flex-start', padding: '1rem 1.25rem', borderRadius: 'var(--radius-lg)', fontWeight: 700 }}>
-                <Bell size={18} style={{ marginRight: '1rem' }} /> Notifications
+              <TabsTrigger 
+                value="notifications" 
+                className="flex items-center gap-2" 
+                style={{ 
+                  background: 'transparent',
+                  border: 'none',
+                  borderBottom: activeTab === 'notifications' ? '2px solid var(--primary)' : '2px solid transparent',
+                  padding: '1rem 0.5rem', 
+                  borderRadius: 0, 
+                  fontWeight: activeTab === 'notifications' ? 700 : 500,
+                  fontSize: '0.875rem',
+                  color: activeTab === 'notifications' ? 'var(--foreground)' : 'var(--muted-foreground)',
+                  marginBottom: '-1px',
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <Bell size={16} /> Notifications
               </TabsTrigger>
             </TabsList>
-            
-            <div className="premium-glass" style={{ marginTop: '2.5rem', padding: '1.5rem', borderRadius: 'var(--radius-xl)' }}>
-              <div style={{ fontSize: '0.65rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--primary)', marginBottom: '0.5rem' }}>System Status</div>
-              <div style={{ fontSize: '0.85rem', fontWeight: 700 }}>Draco Sentinel v2.4</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.5rem', color: '#00ff00', fontSize: '0.75rem' }}>
-                <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#00ff00' }} />
-                Online & Synchronized
-              </div>
-            </div>
           </div>
 
-          {/* Right Side: Content area */}
-          <div style={{ flex: 1 }}>
-            <div style={{ marginBottom: '3rem' }}>
-              <h2 style={{ fontSize: '2.5rem', marginBottom: '0.75rem', fontWeight: 900, letterSpacing: '-0.04em' }}>Settings</h2>
-              <p style={{ color: 'var(--muted-foreground)', fontSize: '1rem', maxWidth: '600px' }}>
-                Manage your profile, cloud governance connections, and security preferences.
-              </p>
-            </div>
+          {/* Centered Content area */}
+          <div style={{ flex: 1, paddingTop: '1rem', width: '100%' }}>
 
             <TabsContent value="profile" className="animate-fade-in" style={{ marginTop: 0 }}>
-              <div className="card" style={{ padding: '2.5rem', boxShadow: '0 10px 40px rgba(0,0,0,0.03)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '2.5rem' }}>
-                  <User className="text-primary" size={24} />
-                  <h3 style={{ fontSize: '1.25rem', fontWeight: 800 }}>User Profile</h3>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2.5rem' }}>
-                  <div>
-                    <label className="micro-label" style={{ display: 'block', marginBottom: '0.75rem' }}>Full Name</label>
-                    <div className="operational-surface" style={{ padding: '1rem 1.25rem', fontSize: '1rem' }}>{user.name}</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+                <div className="card" style={{ padding: '2.5rem', boxShadow: '0 10px 40px rgba(0,0,0,0.03)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '2.5rem' }}>
+                    <User className="text-primary" size={24} />
+                    <h3 style={{ fontSize: '1.25rem', fontWeight: 800 }}>User Profile</h3>
                   </div>
-                  <div>
-                    <label className="micro-label" style={{ display: 'block', marginBottom: '0.75rem' }}>Email Address</label>
-                    <div className="operational-surface" style={{ padding: '1rem 1.25rem', fontSize: '1rem' }}>{user.email || 'Not set'}</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2.5rem' }}>
+                    <div>
+                      <label className="micro-label" style={{ display: 'block', marginBottom: '0.75rem' }}>Full Name</label>
+                      <div className="operational-surface" style={{ padding: '1rem 1.25rem', fontSize: '1rem' }}>{user.name}</div>
+                    </div>
+                    <div>
+                      <label className="micro-label" style={{ display: 'block', marginBottom: '0.75rem' }}>Email Address</label>
+                      <div className="operational-surface" style={{ padding: '1rem 1.25rem', fontSize: '1rem' }}>{user.email || 'Not set'}</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="card" style={{ padding: '2.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
+                    <Mail className="text-primary" size={20} />
+                    <h3 style={{ fontSize: '1.125rem', fontWeight: 800 }}>Notification Recipients</h3>
+                  </div>
+                  <p style={{ color: 'var(--muted-foreground)', fontSize: '0.875rem', marginBottom: '2rem' }}>
+                    Manage the target infrastructure fleet recipients for real-time drift alerts and executive summaries.
+                  </p>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '2rem' }}>
+                    {notificationEmails.map((email, idx) => (
+                      <div key={idx} className="operational-surface" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem 1.25rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                          <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: idx === 0 ? '#00ff00' : 'var(--muted)', opacity: 0.6 }} />
+                          <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>{email}</span>
+                          {idx === 0 && <span className="micro-label" style={{ opacity: 0.5, fontSize: '0.6rem' }}>PRIMARY</span>}
+                        </div>
+                        {idx > 0 && (
+                          <button 
+                            onClick={() => setNotificationEmails(prev => prev.filter((_, i) => i !== idx))}
+                            style={{ color: 'var(--primary)', opacity: 0.6, cursor: 'pointer', transition: 'opacity 0.2s' }}
+                            onMouseOver={(e) => e.currentTarget.style.opacity = '1'}
+                            onMouseOut={(e) => e.currentTarget.style.opacity = '0.6'}
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '0.75rem' }}>
+                    <input 
+                      type="email" 
+                      placeholder="Add recipient address..."
+                      className="operational-surface"
+                      style={{ flex: 1, padding: '0.75rem 1rem' }}
+                      value={newEmail}
+                      onChange={(e) => setNewEmail(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && newEmail.includes('@')) {
+                          setNotificationEmails(prev => [...prev, newEmail])
+                          setNewEmail('')
+                        }
+                      }}
+                    />
+                    <button 
+                      className="btn-primary" 
+                      onClick={() => {
+                        if (newEmail.includes('@')) {
+                          setNotificationEmails(prev => [...prev, newEmail])
+                          setNewEmail('')
+                        }
+                      }}
+                      disabled={!newEmail.includes('@')}
+                      style={{ padding: '0 1.5rem' }}
+                    >
+                      <Plus size={16} /> Add
+                    </button>
                   </div>
                 </div>
               </div>
@@ -272,9 +495,6 @@ function Settings() {
                         })}
                       </div>
                     </div>
-                    <button className="btn-secondary" style={{ padding: '0.5rem 1rem', fontSize: '0.75rem' }} onClick={() => queryClient.invalidateQueries({ queryKey: ['me'] })}>
-                      <RefreshCcw size={12} />
-                    </button>
                   </div>
                 </div>
 
@@ -287,9 +507,7 @@ function Settings() {
                         <ConnectionRow
                           key={c.id}
                           connection={c}
-                          isSyncing={syncMutation.isPending && syncMutation.variables === c.id}
                           isDisconnecting={disconnectMutation.isPending && disconnectMutation.variables === c.id}
-                          onSync={() => syncMutation.mutate(c.id)}
                           onDisconnect={() => disconnectMutation.mutate(c.id)}
                         />
                       ))}
@@ -320,7 +538,7 @@ function Settings() {
                         <>
                           {!azureTokenBundle ? (
                             <button className="btn-primary" onClick={() => void handleAzureSignIn()} disabled={isAzureExchangePending} style={{ width: '100%' }}>
-                              {isAzureExchangePending ? <Loader2 className="animate-spin" size={16} /> : 'Authorize Microsoft'}
+                              {isAzureExchangePending ? <Spinner size={16} /> : 'Login with Microsoft'}
                             </button>
                           ) : (
                             <>
@@ -340,18 +558,195 @@ function Settings() {
                       ) : (
                         <>
                           <div>
-                            <label className="micro-label">{provider === 'GCP' ? 'Project ID' : 'Account/Sub ID'}</label>
-                            <input value={subscriptionId} onChange={(e) => setSubscriptionId(e.target.value)} className="operational-surface" style={{ width: '100%', padding: '0.75rem' }} />
+                            <label className="micro-label">AWS Account ID</label>
+                            <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'stretch' }}>
+                              <div style={{ position: 'relative', flex: 1 }}>
+                                <input
+                                  value={subscriptionId}
+                                  onChange={(e) => setSubscriptionId(e.target.value)}
+                                  className="operational-surface"
+                                  style={{ width: '100%', padding: '0.75rem 2.5rem 0.75rem 1rem' }}
+                                  placeholder="12-digit AWS account ID"
+                                />
+                                <div style={{ position: 'absolute', right: '0.75rem', top: '50%', transform: 'translateY(-50%)', display: 'flex' }}>
+                                  {subscriptionId ? (
+                                    isAwsAccountIdValid ? <CheckCircle2 size={16} color="#00ff00" /> : <AlertCircle size={16} color="var(--primary)" />
+                                  ) : null}
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                className="btn-secondary"
+                                onClick={() => setIsAwsAccountDrawerOpen(true)}
+                                style={{ padding: '0.75rem' }}
+                                aria-label="Open AWS account ID instructions"
+                              >
+                                <Info size={16} />
+                              </button>
+                            </div>
                           </div>
                           <div>
-                            <label className="micro-label">Label</label>
-                            <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="operational-surface" style={{ width: '100%', padding: '0.75rem' }} />
+                            <label className="micro-label">AWS Connection Method</label>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                              <button
+                                type="button"
+                                className={awsConnectionMode === 'assume-role' ? 'btn-primary' : 'btn-secondary'}
+                                onClick={() => setAwsConnectionMode('assume-role')}
+                                style={{ justifyContent: 'center' }}
+                              >
+                                Assume Role
+                              </button>
+                              <button
+                                type="button"
+                                className={awsConnectionMode === 'access-keys' ? 'btn-primary' : 'btn-secondary'}
+                                onClick={() => setAwsConnectionMode('access-keys')}
+                                style={{ justifyContent: 'center' }}
+                              >
+                                Access Keys
+                              </button>
+                            </div>
                           </div>
+                          {awsConnectionMode === 'assume-role' ? (
+                            <>
+                              <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', display: 'flex', gap: '1rem' }}>
+                                <ShieldCheck size={20} style={{ flexShrink: 0, marginTop: '2px', color: 'var(--muted)' }} />
+                                <div style={{ margin: 0, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                  <p style={{ fontSize: '0.8125rem', color: 'var(--muted)', margin: 0 }}>
+                                    Recommended for ongoing use. Draco stores only the AWS account metadata and the role ARN you paste back after the role is created.
+                                  </p>
+                                  {awsBootstrapQuery.isFetching && (
+                                    <div style={{ fontSize: '0.8125rem', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                      <Spinner size={14} />
+                                      Preparing your guided IAM role setup...
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+
+                              {awsBootstrapQuery.data && (
+                                <>
+                                  <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                    <div style={{ fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)' }}>Guided AWS Role Setup</div>
+                                    <div style={{ fontSize: '0.875rem', color: 'var(--foreground)' }}>1. Open the setup guide and create a read-only IAM role in AWS.</div>
+                                    <div style={{ fontSize: '0.875rem', color: 'var(--foreground)' }}>2. Use Draco&apos;s trust policy and read-only permissions policy.</div>
+                                    <div style={{ fontSize: '0.875rem', color: 'var(--foreground)' }}>3. Paste the new role ARN here and link the account.</div>
+                                  </div>
+
+                                  <div className="grid grid-cols-2">
+                                    <div>
+                                      <label className="micro-label">Draco Trusted Principal</label>
+                                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                        <input
+                                          value={awsBootstrapQuery.data.trustedPrincipalArn}
+                                          readOnly
+                                          className="operational-surface"
+                                          style={{ width: '100%', padding: '0.75rem' }}
+                                        />
+                                        <button type="button" className="btn-secondary" onClick={() => void handleCopyAwsValue('settings-trusted-principal', awsBootstrapQuery.data.trustedPrincipalArn)}>
+                                          {copiedAwsValue === 'settings-trusted-principal' ? 'Copied' : 'Copy'}
+                                        </button>
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <label className="micro-label">External ID</label>
+                                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                        <input
+                                          value={awsBootstrapQuery.data.externalId}
+                                          readOnly
+                                          className="operational-surface"
+                                          style={{ width: '100%', padding: '0.75rem' }}
+                                        />
+                                        <button type="button" className="btn-secondary" onClick={() => void handleCopyAwsValue('settings-external-id', awsBootstrapQuery.data.externalId)}>
+                                          {copiedAwsValue === 'settings-external-id' ? 'Copied' : 'Copy'}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div>
+                                    <label className="micro-label">Trust Policy</label>
+                                    <textarea
+                                      value={awsBootstrapQuery.data.trustPolicyJson}
+                                      readOnly
+                                      rows={10}
+                                      className="operational-surface"
+                                      style={{ width: '100%', padding: '0.75rem', fontFamily: 'var(--font-mono)', resize: 'vertical' }}
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <label className="micro-label">Read-Only Permissions Policy</label>
+                                    <textarea
+                                      value={awsBootstrapQuery.data.permissionsPolicyJson}
+                                      readOnly
+                                      rows={12}
+                                      className="operational-surface"
+                                      style={{ width: '100%', padding: '0.75rem', fontFamily: 'var(--font-mono)', resize: 'vertical' }}
+                                    />
+                                  </div>
+
+                                  <details style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '1rem' }}>
+                                    <summary style={{ cursor: 'pointer', fontWeight: 700 }}>Advanced: Terraform Template</summary>
+                                    <textarea
+                                      value={awsBootstrapQuery.data.terraformTemplate}
+                                      readOnly
+                                      rows={12}
+                                      className="operational-surface"
+                                      style={{ width: '100%', padding: '0.75rem', fontFamily: 'var(--font-mono)', resize: 'vertical', marginTop: '1rem' }}
+                                    />
+                                  </details>
+
+                                  <div>
+                                    <label className="micro-label">Provisioned Role ARN</label>
+                                    <input
+                                      value={awsRoleArn}
+                                      onChange={(e) => setAwsRoleArn(e.target.value)}
+                                      className="operational-surface"
+                                      style={{ width: '100%', padding: '0.75rem' }}
+                                      placeholder={awsBootstrapQuery.data.suggestedRoleArn}
+                                    />
+                                    <p style={{ fontSize: '0.75rem', color: 'var(--muted)', marginTop: '0.5rem' }}>
+                                      Draco persists the role ARN because it is needed for future syncs. The ARN itself is not a secret.
+                                    </p>
+                                  </div>
+                                </>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', display: 'flex', gap: '1rem' }}>
+                                <Info size={20} style={{ flexShrink: 0, marginTop: '2px', color: 'var(--muted)' }} />
+                                <p style={{ fontSize: '0.8125rem', color: 'var(--muted)', margin: 0 }}>
+                                  Advanced fallback. Draco must retain these credentials so it can keep syncing this AWS account.
+                                </p>
+                              </div>
+                              <div>
+                                <label className="micro-label">AWS Access Key ID</label>
+                                <input value={awsAccessKeyId} onChange={(e) => setAwsAccessKeyId(e.target.value)} className="operational-surface" style={{ width: '100%', padding: '0.75rem' }} />
+                              </div>
+                              <div>
+                                <label className="micro-label">AWS Secret Access Key</label>
+                                <input value={awsSecretAccessKey} onChange={(e) => setAwsSecretAccessKey(e.target.value)} type="password" className="operational-surface" style={{ width: '100%', padding: '0.75rem' }} />
+                              </div>
+                              <div>
+                                <label className="micro-label">AWS Session Token (Optional)</label>
+                                <input value={awsSessionToken} onChange={(e) => setAwsSessionToken(e.target.value)} type="password" className="operational-surface" style={{ width: '100%', padding: '0.75rem' }} />
+                              </div>
+                            </>
+                          )}
                         </>
                       )}
                       {azureAuthError && <div style={{ color: 'var(--primary)', fontSize: '0.75rem' }}>{azureAuthError}</div>}
+                      {provider === 'AWS' && awsConnectionMode === 'assume-role' && awsBootstrapQuery.isError && (
+                        <div style={{ color: 'var(--primary)', fontSize: '0.75rem', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.75rem' }}>
+                          <div>{awsBootstrapErrorMessage}</div>
+                          <button className="btn-secondary" type="button" onClick={() => void navigate({ to: '/aws-onboarding' })}>
+                            Open AWS Setup Guide
+                          </button>
+                        </div>
+                      )}
                       <button className="btn-primary" onClick={() => addConnectionMutation.mutate()} disabled={!isConnectionReady || addConnectionMutation.isPending} style={{ marginTop: '0.5rem', width: '100%' }}>
-                        {addConnectionMutation.isPending ? <Loader2 className="animate-spin" /> : <><Plus size={16} /> Link Account</>}
+                        {addConnectionMutation.isPending ? <Spinner size={16} /> : <><Plus size={16} /> Link Account</>}
                       </button>
                     </div>
                   </div>
@@ -410,28 +805,182 @@ function Settings() {
           </div>
         </div>
       </Tabs>
+      <Drawer
+        open={isAwsAccountDrawerOpen}
+        onOpenChange={setIsAwsAccountDrawerOpen}
+        shouldScaleBackground={false}
+      >
+        <DrawerContent>
+          <DrawerHeader style={{ border: 'none', paddingBottom: '0.5rem' }}>
+            <DrawerTitle>Connect AWS Account</DrawerTitle>
+            <DrawerDescription>
+              Draco can walk you through a read-only IAM role setup. Paste your AWS account ID, create the role in AWS Console, then paste the role ARN back into Draco.
+            </DrawerDescription>
+          </DrawerHeader>
+          <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <div style={{ background: 'var(--secondary)', padding: '1.25rem', borderRadius: 'var(--radius-lg)' }}>
+              <p style={{ fontSize: '0.875rem', color: 'var(--foreground)', margin: 0, lineHeight: 1.6 }}>
+                In <a href="https://console.aws.amazon.com/" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary)', textDecoration: 'underline', fontWeight: 600 }}>AWS Console</a>, 
+                click your account name in the top-right corner. The 12-digit Account ID appears in that menu and on the 
+                <a href="https://console.aws.amazon.com/billing/home" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary)', textDecoration: 'underline', fontWeight: 600, marginLeft: '0.35rem' }}>Billing and Cost Management</a> home page. 
+                You can also open the <a href="https://console.aws.amazon.com/iamv2/home#/home" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--primary)', textDecoration: 'underline', fontWeight: 600 }}>IAM Console</a> to check the account details page.
+              </p>
+            </div>
+
+            <div>
+              <label className="micro-label" style={{ display: 'block', marginBottom: '0.5rem' }}>Enter AWS Account ID</label>
+              <input
+                value={subscriptionId}
+                onChange={(e) => setSubscriptionId(e.target.value)}
+                className="operational-surface"
+                style={{ width: '100%', padding: '0.75rem 1rem' }}
+                placeholder="12-digit AWS account ID"
+              />
+            </div>
+
+            {subscriptionId && !isAwsAccountIdValid && (
+              <div style={{ color: 'var(--primary)', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <AlertCircle size={16} />
+                Enter the full 12-digit AWS account ID.
+              </div>
+            )}
+
+            {isAwsAccountIdValid && awsBootstrapQuery.isFetching && (
+              <div style={{ color: 'var(--muted)', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Spinner size={16} />
+                Preparing your guided IAM role setup for account {subscriptionId}...
+              </div>
+            )}
+
+            {isAwsAccountIdValid && awsBootstrapQuery.isError && (
+              <div style={{ color: 'var(--primary)', fontSize: '0.875rem', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.75rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <AlertCircle size={16} />
+                  {awsBootstrapErrorMessage}
+                </div>
+                <button className="btn-secondary" type="button" onClick={() => void navigate({ to: '/aws-onboarding' })}>
+                  Open AWS Setup Guide
+                </button>
+              </div>
+            )}
+
+            {isAwsAccountIdValid && awsBootstrapQuery.data && !addConnectionMutation.isPending && !addConnectionMutation.isError && (
+              <div style={{ color: '#00c27a', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <CheckCircle2 size={16} />
+                Guided setup is ready for AWS account {subscriptionId}.
+              </div>
+            )}
+
+            {awsBootstrapQuery.data && (
+              <>
+                <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)' }}>Step 1</div>
+                  <div style={{ fontSize: '0.9rem', fontWeight: 700 }}>Create a read-only IAM role in AWS</div>
+                  <p style={{ fontSize: '0.8125rem', color: 'var(--muted)', margin: 0 }}>
+                    Use the trust policy and permissions policy below, or use the Terraform template under Advanced if your team prefers infrastructure-as-code.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2">
+                  <div>
+                    <label className="micro-label" style={{ display: 'block', marginBottom: '0.5rem' }}>Trusted Principal</label>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <input value={awsBootstrapQuery.data.trustedPrincipalArn} readOnly className="operational-surface" style={{ width: '100%', padding: '0.75rem 1rem' }} />
+                      <button type="button" className="btn-secondary" onClick={() => void handleCopyAwsValue('settings-drawer-trusted-principal', awsBootstrapQuery.data.trustedPrincipalArn)}>
+                        {copiedAwsValue === 'settings-drawer-trusted-principal' ? 'Copied' : 'Copy'}
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="micro-label" style={{ display: 'block', marginBottom: '0.5rem' }}>External ID</label>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <input value={awsBootstrapQuery.data.externalId} readOnly className="operational-surface" style={{ width: '100%', padding: '0.75rem 1rem' }} />
+                      <button type="button" className="btn-secondary" onClick={() => void handleCopyAwsValue('settings-drawer-external-id', awsBootstrapQuery.data.externalId)}>
+                        {copiedAwsValue === 'settings-drawer-external-id' ? 'Copied' : 'Copy'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="micro-label" style={{ display: 'block', marginBottom: '0.5rem' }}>Trust Policy</label>
+                  <textarea value={awsBootstrapQuery.data.trustPolicyJson} readOnly rows={10} className="operational-surface" style={{ width: '100%', padding: '0.75rem 1rem', fontFamily: 'var(--font-mono)', resize: 'vertical' }} />
+                </div>
+
+                <div>
+                  <label className="micro-label" style={{ display: 'block', marginBottom: '0.5rem' }}>Read-Only Permissions Policy</label>
+                  <textarea value={awsBootstrapQuery.data.permissionsPolicyJson} readOnly rows={12} className="operational-surface" style={{ width: '100%', padding: '0.75rem 1rem', fontFamily: 'var(--font-mono)', resize: 'vertical' }} />
+                </div>
+
+                <details style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '1rem' }}>
+                  <summary style={{ cursor: 'pointer', fontWeight: 700 }}>Advanced: Terraform Template</summary>
+                  <textarea value={awsBootstrapQuery.data.terraformTemplate} readOnly rows={16} className="operational-surface" style={{ width: '100%', padding: '0.75rem 1rem', fontFamily: 'var(--font-mono)', resize: 'vertical', marginTop: '1rem' }} />
+                </details>
+
+                <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)' }}>Step 2</div>
+                  <div style={{ fontSize: '0.9rem', fontWeight: 700 }}>Paste the created role ARN back into Draco</div>
+                  <p style={{ fontSize: '0.8125rem', color: 'var(--muted)', margin: 0 }}>
+                    Draco persists the role ARN because it needs it for future syncs. The ARN itself is not a secret.
+                  </p>
+                </div>
+              </>
+            )}            {provider === 'AWS' && addConnectionMutation.isPending && (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1.25rem', padding: '3rem 0', animation: 'fade-in 0.3s forwards' }}>
+                <Spinner size={32} className="text-primary" />
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontWeight: 800, fontSize: '1.1rem', marginBottom: '0.35rem' }}>Bootstrap in Progress</div>
+                  <div style={{ color: 'var(--muted-foreground)', fontSize: '0.875rem' }}>Deploying initial identity context for the {subscriptionId.trim()} fleet.</div>
+                </div>
+              </div>
+            )}
+
+            {provider === 'AWS' && addConnectionMutation.isError && (
+              <div style={{ color: 'var(--primary)', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <AlertCircle size={16} />
+                {(addConnectionMutation.error as Error).message}
+              </div>
+            )}
+          </div>
+          <DrawerFooter style={{ border: 'none', paddingTop: '0.5rem' }}>
+            <DrawerClose asChild>
+              <button className="btn-secondary">Close</button>
+            </DrawerClose>
+          </DrawerFooter>
+        </DrawerContent>
+      </Drawer>
     </div>
   )
 }
 
 function ConnectionRow({
   connection,
-  isSyncing,
   isDisconnecting,
-  onSync,
   onDisconnect,
 }: {
   connection: CloudConnection
-  isSyncing: boolean
   isDisconnecting: boolean
-  onSync: () => void
   onDisconnect: () => void
 }) {
+  const connectionModeLabel =
+    connection.provider === 'AWS'
+      ? connection.authType === 'AwsAssumeRole'
+        ? 'Assume Role'
+        : connection.authType === 'AwsStaticCredentials'
+          ? 'Access Keys'
+          : null
+      : null
+
   return (
     <div className="operational-surface" style={{ padding: '1rem', display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'center' }}>
       <div>
         <div style={{ fontWeight: 600 }}>{connection.displayName || connection.provider}</div>
         <div style={{ fontSize: '0.8125rem', color: 'var(--muted-foreground)' }}>{connection.subscriptionId}</div>
+        {connectionModeLabel && (
+          <div style={{ fontSize: '0.75rem', color: 'var(--muted)', marginTop: '0.25rem' }}>
+            {connectionModeLabel}
+          </div>
+        )}
         <div style={{ fontSize: '0.75rem', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.25rem' }}>
           <CheckCircle2 size={14} />
           {connection.syncStatus} • {connection.syncMessage || 'Waiting for sync'}
@@ -439,18 +988,7 @@ function ConnectionRow({
       </div>
 
       <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-        <button className="btn-secondary" onClick={onSync} disabled={isSyncing || isDisconnecting}>
-          {isSyncing ? (
-            <>
-              <Loader2 className="animate-spin" size={14} /> Syncing...
-            </>
-          ) : (
-            <>
-              <RefreshCcw size={14} />
-            </>
-          )}
-        </button>
-        <button className="btn-secondary" onClick={onDisconnect} disabled={isSyncing || isDisconnecting}>
+        <button className="btn-secondary" onClick={onDisconnect} disabled={isDisconnecting} title="Disconnect">
           {isDisconnecting ? (
             <>
               <Loader2 className="animate-spin" size={14} /> Disconnecting...

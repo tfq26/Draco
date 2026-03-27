@@ -8,6 +8,7 @@ import { CallbackRoute, LegacyCallbackRoute } from './routes/callback'
 import { ResourcesRoute } from './routes/resources'
 import { GovernanceRoute } from './routes/governance'
 import { SettingsRoute } from './routes/settings'
+import { AwsOnboardingRoute } from './routes/aws-onboarding'
 
 const routeTree = rootRoute.addChildren([
   indexRoute, 
@@ -18,7 +19,8 @@ const routeTree = rootRoute.addChildren([
   LegacyCallbackRoute,
   ResourcesRoute,
   GovernanceRoute,
-  SettingsRoute
+  SettingsRoute,
+  AwsOnboardingRoute
 ])
 
 export const router = createRouter({ routeTree })

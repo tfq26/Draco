@@ -233,7 +233,9 @@ public static class AuthEndpoints
                     Provider = provider,
                     SubscriptionId = subscriptionId,
                     DisplayName = connection.DisplayName,
+                    AuthType = connection.AuthType,
                     ExternalAccountId = connection.ExternalAccountId,
+                    AwsRoleArn = connection.AwsRoleArn,
                     AccessToken = connection.AccessToken,
                     RefreshToken = connection.RefreshToken,
                     TokenExpiresAt = connection.TokenExpiresAt,
@@ -245,7 +247,9 @@ public static class AuthEndpoints
             else
             {
                 existingConnection.DisplayName = connection.DisplayName ?? existingConnection.DisplayName;
+                existingConnection.AuthType = connection.AuthType ?? existingConnection.AuthType;
                 existingConnection.ExternalAccountId = connection.ExternalAccountId ?? existingConnection.ExternalAccountId;
+                existingConnection.AwsRoleArn = connection.AwsRoleArn ?? existingConnection.AwsRoleArn;
                 existingConnection.AccessToken = connection.AccessToken ?? existingConnection.AccessToken;
                 existingConnection.RefreshToken = connection.RefreshToken ?? existingConnection.RefreshToken;
                 existingConnection.TokenExpiresAt = connection.TokenExpiresAt ?? existingConnection.TokenExpiresAt;
@@ -289,7 +293,9 @@ public static class AuthEndpoints
                 provider = connection.Provider,
                 subscriptionId = connection.SubscriptionId,
                 displayName = connection.DisplayName,
+                authType = connection.AuthType,
                 externalAccountId = connection.ExternalAccountId,
+                awsRoleArn = connection.AwsRoleArn,
                 isActive = connection.IsActive,
                 connectedAt = connection.ConnectedAt,
                 lastSyncedAt = connection.LastSyncedAt,
@@ -371,7 +377,9 @@ public sealed record SetupCloudConnectionRequest(
     string Provider,
     string SubscriptionId,
     string? DisplayName,
+    string? AuthType,
     string? ExternalAccountId,
+    string? AwsRoleArn,
     string? AccessToken,
     string? RefreshToken,
     DateTimeOffset? TokenExpiresAt);

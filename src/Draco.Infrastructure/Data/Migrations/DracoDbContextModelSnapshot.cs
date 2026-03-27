@@ -34,6 +34,12 @@ namespace Draco.Infrastructure.Data.Migrations
                     b.Property<string>("AccessToken")
                         .HasColumnType("text");
 
+                    b.Property<string>("AuthType")
+                        .HasColumnType("text");
+
+                    b.Property<string>("AwsRoleArn")
+                        .HasColumnType("text");
+
                     b.Property<DateTimeOffset>("ConnectedAt")
                         .HasColumnType("timestamp with time zone");
 

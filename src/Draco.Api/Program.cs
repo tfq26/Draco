@@ -122,11 +122,34 @@ static async Task EnsureDatabaseAsync(IServiceProvider services)
         logger.LogInformation("Starting database initialization.");
         dbContext.Database.SetCommandTimeout(TimeSpan.FromSeconds(30));
         await dbContext.Database.MigrateAsync();
+        await EnsureCloudConnectionSchemaCompatibilityAsync(dbContext, logger);
         logger.LogInformation("Database migrations applied.");
     }
     catch (Exception ex)
     {
         logger.LogError(ex, "Failed to initialize database schema.");
+        throw;
+    }
+}
+
+static async Task EnsureCloudConnectionSchemaCompatibilityAsync(DracoDbContext dbContext, ILogger logger)
+{
+    const string compatibilitySql = """
+        ALTER TABLE "CloudConnections"
+        ADD COLUMN IF NOT EXISTS "AuthType" text;
+
+        ALTER TABLE "CloudConnections"
+        ADD COLUMN IF NOT EXISTS "AwsRoleArn" text;
+        """;
+
+    try
+    {
+        await dbContext.Database.ExecuteSqlRawAsync(compatibilitySql);
+        logger.LogInformation("Verified CloudConnections compatibility columns.");
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to verify CloudConnections compatibility columns.");
         throw;
     }
 }

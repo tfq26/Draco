@@ -4,9 +4,10 @@ import { useEffect, useState, useMemo } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Cloud, Globe, CheckCircle2, AlertCircle, Loader2, Info, ArrowRight, ShieldCheck } from 'lucide-react'
 import { dracoApi, type AzureSubscriptionOption } from '../lib/api'
+import { copyToClipboard, getAwsBootstrapErrorMessage } from '../lib/awsOnboarding'
 import azureLogo from '../assets/azure-logo.svg'
 import awsLogo from '../assets/aws-logo.svg'
-import gcpLogo from '../assets/gcp-logo.svg'
+import { Drawer, DrawerClose, DrawerContent, DrawerDescription, DrawerFooter, DrawerHeader, DrawerTitle } from '../components/ui/drawer'
 
 export const Route = createRoute({
   getParentRoute: () => rootRoute,
@@ -17,7 +18,6 @@ export const Route = createRoute({
 const PROVIDERS = [
   { id: 'Azure', name: 'Azure', description: 'Enterprise-grade cloud discovery.', logo: azureLogo },
   { id: 'AWS', name: 'AWS', description: 'Scale-driven cost governance.', logo: awsLogo },
-  { id: 'GCP', name: 'GCP', description: 'Advanced AI-first infrastructure.', logo: gcpLogo },
 ]
 
 function Setup() {
@@ -25,7 +25,13 @@ function Setup() {
   const [provider, setProvider] = useState<string | null>(null)
   const [subscriptionId, setSubscriptionId] = useState('')
   const [displayName, setDisplayName] = useState('')
-  const [accessToken, setAccessToken] = useState('')
+  const [awsConnectionMode, setAwsConnectionMode] = useState<'assume-role' | 'access-keys'>('assume-role')
+  const [awsRoleArn, setAwsRoleArn] = useState('')
+  const [awsAccessKeyId, setAwsAccessKeyId] = useState('')
+  const [awsSecretAccessKey, setAwsSecretAccessKey] = useState('')
+  const [awsSessionToken, setAwsSessionToken] = useState('')
+  const [copiedAwsValue, setCopiedAwsValue] = useState<string | null>(null)
+  const [isAwsAccountDrawerOpen, setIsAwsAccountDrawerOpen] = useState(false)
   const [azureSubscriptions, setAzureSubscriptions] = useState<AzureSubscriptionOption[]>([])
   const [selectedAzureSubscriptionId, setSelectedAzureSubscriptionId] = useState('')
   const [azureTokenBundle, setAzureTokenBundle] = useState<{
@@ -45,19 +51,70 @@ function Setup() {
     queryFn: dracoApi.auth.getMe,
   })
 
-  const isSubscriptionIdValid = useMemo(() => {
+  const isAwsAccountIdValid = useMemo(
+    () => /^\d{12}$/.test(subscriptionId.trim()),
+    [subscriptionId],
+  )
+
+  const awsBootstrapQuery = useQuery({
+    queryKey: ['aws-bootstrap', subscriptionId.trim()],
+    queryFn: () => dracoApi.cloudConnections.getAwsBootstrap(subscriptionId.trim()),
+    enabled: provider === 'AWS' && awsConnectionMode === 'assume-role' && isAwsAccountIdValid,
+    staleTime: Infinity,
+    retry: false,
+  })
+
+  const awsBootstrapErrorMessage = useMemo(
+    () => getAwsBootstrapErrorMessage(awsBootstrapQuery.error as Error | null),
+    [awsBootstrapQuery.error],
+  )
+
+  const isConnectionConfigValid = useMemo(() => {
     if (provider === 'Azure') {
       return selectedAzureSubscriptionId.trim().length > 0
     }
 
-    if (!subscriptionId.trim()) return false
-    return subscriptionId.trim().length > 5
-  }, [provider, selectedAzureSubscriptionId, subscriptionId])
+    if (provider === 'AWS') {
+      if (awsConnectionMode === 'assume-role') {
+        return isAwsAccountIdValid &&
+          Boolean(awsBootstrapQuery.data) &&
+          awsRoleArn.trim().length > 0
+      }
+
+      return isAwsAccountIdValid &&
+        awsAccessKeyId.trim().length > 0 &&
+        awsSecretAccessKey.trim().length > 0
+    }
+
+    return false
+  }, [
+    provider,
+    selectedAzureSubscriptionId,
+    awsConnectionMode,
+    isAwsAccountIdValid,
+    awsBootstrapQuery.data,
+    awsRoleArn,
+    awsAccessKeyId,
+    awsSecretAccessKey,
+  ])
 
   const selectedAzureSubscription = useMemo(
     () => azureSubscriptions.find(subscription => subscription.subscriptionId === selectedAzureSubscriptionId) ?? null,
     [azureSubscriptions, selectedAzureSubscriptionId],
   )
+
+  const inferredAwsConnectionLabel = useMemo(() => {
+    if (!subscriptionId.trim()) {
+      return undefined
+    }
+
+    if (awsConnectionMode === 'assume-role') {
+      const roleName = awsRoleArn.trim().split('/').pop()
+      return roleName ? `AWS ${subscriptionId.trim()} • ${roleName}` : `AWS ${subscriptionId.trim()}`
+    }
+
+    return `AWS ${subscriptionId.trim()}`
+  }, [subscriptionId, awsConnectionMode, awsRoleArn])
 
   const connectMutation = useMutation({
     mutationFn: async () => {
@@ -81,15 +138,35 @@ function Setup() {
           tokenExpiresAt: azureTokenBundle.tokenExpiresAt,
         })
       } else {
+        if (provider !== 'AWS') {
+          throw new Error('Unsupported provider.')
+        }
+
         if (!subscriptionId.trim()) {
-          throw new Error('Provider and Subscription ID are required.')
+          throw new Error('AWS account ID is required.')
+        }
+
+        const awsAccessToken = awsConnectionMode === 'access-keys'
+          ? JSON.stringify({
+              kind: 'AwsStaticCredentials',
+              accessKeyId: awsAccessKeyId.trim(),
+              secretAccessKey: awsSecretAccessKey.trim(),
+              sessionToken: awsSessionToken.trim() || undefined,
+            })
+          : undefined
+
+        if (awsConnectionMode === 'assume-role' && !awsBootstrapQuery.data) {
+          throw new Error('Open the AWS setup guide, create the read-only IAM role, and then paste the role ARN to connect this account.')
         }
 
         connection = await dracoApi.cloudConnections.upsert({
           provider,
           subscriptionId: subscriptionId.trim(),
-          displayName: displayName.trim() || undefined,
-          accessToken: accessToken.trim() || undefined,
+          displayName: inferredAwsConnectionLabel,
+          authType: awsConnectionMode === 'assume-role' ? 'AwsAssumeRole' : 'AwsStaticCredentials',
+          externalAccountId: subscriptionId.trim(),
+          awsRoleArn: awsConnectionMode === 'assume-role' ? awsRoleArn.trim() : undefined,
+          accessToken: awsAccessToken,
         })
       }
 
@@ -108,6 +185,9 @@ function Setup() {
       return connection
     },
     onSuccess: async () => {
+      if (provider === 'AWS') {
+        setIsAwsAccountDrawerOpen(false)
+      }
       await queryClient.invalidateQueries({ queryKey: ['me'] })
       await queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] })
       await queryClient.invalidateQueries({ queryKey: ['resources'] })
@@ -183,6 +263,22 @@ function Setup() {
       void navigate({ to: '/dashboard' })
     }
   }, [navigate, step, user?.isSetupComplete])
+
+  useEffect(() => {
+    setAwsRoleArn('')
+  }, [subscriptionId, awsConnectionMode])
+
+  const handleCopyAwsValue = async (key: string, value: string) => {
+    try {
+      await copyToClipboard(value)
+      setCopiedAwsValue(key)
+      window.setTimeout(() => {
+        setCopiedAwsValue((current) => current === key ? null : current)
+      }, 1500)
+    } catch {
+      setCopiedAwsValue(null)
+    }
+  }
 
   const handleAzureSignIn = async () => {
     try {
@@ -363,54 +459,246 @@ function Setup() {
               ) : (
                 <>
                   <div>
-                    <label className="micro-label" style={{ display: 'block', marginBottom: '0.5rem' }}>Subscription ID</label>
-                    <div style={{ position: 'relative' }}>
-                      <input 
-                        value={subscriptionId} 
-                        onChange={(e) => setSubscriptionId(e.target.value)} 
-                        type="text" 
-                        placeholder="Enter your subscription or project identifier" 
-                        className="operational-surface"
-                        style={{ width: '100%', padding: '0.75rem 2.5rem 0.75rem 1rem' }} 
-                      />
-                      {subscriptionId && (
-                        <div style={{ position: 'absolute', right: '12px', top: '12px' }}>
-                          {isSubscriptionIdValid ? <CheckCircle2 size={16} color="#00ff00" /> : <AlertCircle size={16} color="var(--primary)" />}
-                        </div>
-                      )}
+                    <label className="micro-label" style={{ display: 'block', marginBottom: '0.5rem' }}>AWS Account ID</label>
+                    <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'stretch' }}>
+                      <div className="operational-surface" style={{ flex: 1, padding: '0.75rem 1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem' }}>
+                        <span style={{ color: subscriptionId ? 'var(--foreground)' : 'var(--muted)' }}>
+                          {subscriptionId || 'Select or paste your 12-digit AWS account ID'}
+                        </span>
+                        {subscriptionId ? (
+                          isAwsAccountIdValid ? <CheckCircle2 size={16} color="#00ff00" /> : <AlertCircle size={16} color="var(--primary)" />
+                        ) : null}
+                      </div>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => setIsAwsAccountDrawerOpen(true)}
+                        style={{ padding: '0.75rem' }}
+                        aria-label="Open AWS account ID instructions"
+                      >
+                        <Info size={16} />
+                      </button>
                     </div>
                   </div>
 
                   <div>
-                    <label className="micro-label" style={{ display: 'block', marginBottom: '0.5rem' }}>Connection Label</label>
-                    <input 
-                      value={displayName} 
-                      onChange={(e) => setDisplayName(e.target.value)} 
-                      type="text" 
-                      placeholder="e.g., Production Fleet" 
-                      className="operational-surface"
-                      style={{ width: '100%', padding: '0.75rem 1rem' }} 
-                    />
+                    <label className="micro-label" style={{ display: 'block', marginBottom: '0.75rem' }}>AWS Connection Method</label>
+                    <div className="grid grid-cols-2">
+                      <button
+                        type="button"
+                        className={awsConnectionMode === 'assume-role' ? 'btn-primary' : 'btn-secondary'}
+                        onClick={() => setAwsConnectionMode('assume-role')}
+                        style={{ justifyContent: 'center' }}
+                      >
+                        Assume Role
+                      </button>
+                      <button
+                        type="button"
+                        className={awsConnectionMode === 'access-keys' ? 'btn-primary' : 'btn-secondary'}
+                        onClick={() => setAwsConnectionMode('access-keys')}
+                        style={{ justifyContent: 'center' }}
+                      >
+                        Access Keys
+                      </button>
+                    </div>
                   </div>
 
-                  <div>
-                    <label className="micro-label" style={{ display: 'block', marginBottom: '0.5rem' }}>Read-Only Access Token (Optional)</label>
-                    <input 
-                      value={accessToken} 
-                      onChange={(e) => setAccessToken(e.target.value)} 
-                      type="password" 
-                      placeholder="Paste manual provider token" 
-                      className="operational-surface"
-                      style={{ width: '100%', padding: '0.75rem 1rem' }} 
-                    />
-                  </div>
+                  {awsConnectionMode === 'assume-role' ? (
+                    <>
+                      <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', display: 'flex', gap: '1rem' }}>
+                        <ShieldCheck size={20} style={{ flexShrink: 0, marginTop: '2px', color: 'var(--muted)' }} />
+                        <div style={{ margin: 0, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                          <p style={{ fontSize: '0.8125rem', color: 'var(--muted)', margin: 0 }}>
+                            Recommended for production. Draco stores only the AWS account metadata and the role ARN you paste back here. We do not keep the setup template after the role is created.
+                          </p>
+                          {awsBootstrapQuery.isFetching && (
+                            <div style={{ fontSize: '0.8125rem', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <Loader2 className="animate-spin" size={14} />
+                              Preparing your guided IAM role setup...
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {awsBootstrapQuery.data && (
+                        <>
+                          <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                            <div style={{ fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)' }}>Guided AWS Role Setup</div>
+                            <div style={{ fontSize: '0.875rem', color: 'var(--foreground)' }}>1. Open the AWS setup guide.</div>
+                            <div style={{ fontSize: '0.875rem', color: 'var(--foreground)' }}>2. Create a read-only IAM role in your AWS account using the trust and permissions policies below.</div>
+                            <div style={{ fontSize: '0.875rem', color: 'var(--foreground)' }}>3. Paste the created role ARN back into Draco and connect.</div>
+                          </div>
+
+                          <div className="grid grid-cols-2">
+                            <div>
+                              <label className="micro-label" style={{ display: 'block', marginBottom: '0.5rem' }}>Draco Trusted Principal</label>
+                              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                <input
+                                  value={awsBootstrapQuery.data.trustedPrincipalArn}
+                                  readOnly
+                                  className="operational-surface"
+                                  style={{ width: '100%', padding: '0.75rem 1rem', opacity: 0.8 }}
+                                />
+                                <button type="button" className="btn-secondary" onClick={() => void handleCopyAwsValue('trusted-principal', awsBootstrapQuery.data.trustedPrincipalArn)}>
+                                  {copiedAwsValue === 'trusted-principal' ? 'Copied' : 'Copy'}
+                                </button>
+                              </div>
+                            </div>
+                            <div>
+                              <label className="micro-label" style={{ display: 'block', marginBottom: '0.5rem' }}>External ID</label>
+                              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                <input
+                                  value={awsBootstrapQuery.data.externalId}
+                                  readOnly
+                                  className="operational-surface"
+                                  style={{ width: '100%', padding: '0.75rem 1rem', opacity: 0.8 }}
+                                />
+                                <button type="button" className="btn-secondary" onClick={() => void handleCopyAwsValue('external-id', awsBootstrapQuery.data.externalId)}>
+                                  {copiedAwsValue === 'external-id' ? 'Copied' : 'Copy'}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="micro-label" style={{ display: 'block', marginBottom: '0.5rem' }}>Trust Policy</label>
+                            <textarea
+                              value={awsBootstrapQuery.data.trustPolicyJson}
+                              readOnly
+                              rows={12}
+                              className="operational-surface"
+                              style={{ width: '100%', padding: '0.75rem 1rem', fontFamily: 'var(--font-mono)', resize: 'vertical' }}
+                            />
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', marginTop: '0.5rem' }}>
+                              <p style={{ fontSize: '0.75rem', color: 'var(--muted)', margin: 0 }}>
+                                Use this as the role trust relationship so your AWS account trusts Draco and requires the external ID above.
+                              </p>
+                              <button type="button" className="btn-secondary" onClick={() => void handleCopyAwsValue('trust-policy', awsBootstrapQuery.data.trustPolicyJson)}>
+                                {copiedAwsValue === 'trust-policy' ? 'Copied' : 'Copy'}
+                              </button>
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="micro-label" style={{ display: 'block', marginBottom: '0.5rem' }}>Read-Only Permissions Policy</label>
+                            <textarea
+                              value={awsBootstrapQuery.data.permissionsPolicyJson}
+                              readOnly
+                              rows={14}
+                              className="operational-surface"
+                              style={{ width: '100%', padding: '0.75rem 1rem', fontFamily: 'var(--font-mono)', resize: 'vertical' }}
+                            />
+                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', marginTop: '0.5rem' }}>
+                              <p style={{ fontSize: '0.75rem', color: 'var(--muted)', margin: 0 }}>
+                                Attach this policy to the role so Draco can read inventory, budgets, costs, and monitoring data.
+                              </p>
+                              <button type="button" className="btn-secondary" onClick={() => void handleCopyAwsValue('permissions-policy', awsBootstrapQuery.data.permissionsPolicyJson)}>
+                                {copiedAwsValue === 'permissions-policy' ? 'Copied' : 'Copy'}
+                              </button>
+                            </div>
+                          </div>
+
+                          <details style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '1rem' }}>
+                            <summary style={{ cursor: 'pointer', fontWeight: 700 }}>Advanced: Terraform Template</summary>
+                            <div style={{ marginTop: '1rem' }}>
+                              <label className="micro-label" style={{ display: 'block', marginBottom: '0.5rem' }}>Terraform Bootstrap File</label>
+                              <textarea
+                                value={awsBootstrapQuery.data.terraformTemplate}
+                                readOnly
+                                rows={18}
+                                className="operational-surface"
+                                style={{ width: '100%', padding: '0.75rem 1rem', fontFamily: 'var(--font-mono)', resize: 'vertical' }}
+                              />
+                              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', marginTop: '0.5rem' }}>
+                                <p style={{ fontSize: '0.75rem', color: 'var(--muted)', margin: 0 }}>
+                                  Advanced fallback for infrastructure teams that prefer Terraform. Run <code>terraform init</code> and <code>terraform apply</code>, then paste the output <code>draco_role_arn</code> below.
+                                </p>
+                                <button type="button" className="btn-secondary" onClick={() => void handleCopyAwsValue('terraform-template', awsBootstrapQuery.data.terraformTemplate)}>
+                                  {copiedAwsValue === 'terraform-template' ? 'Copied' : 'Copy'}
+                                </button>
+                              </div>
+                            </div>
+                          </details>
+
+                          <div>
+                            <label className="micro-label" style={{ display: 'block', marginBottom: '0.5rem' }}>Provisioned Role ARN</label>
+                            <input
+                              value={awsRoleArn}
+                              onChange={(e) => setAwsRoleArn(e.target.value)}
+                              type="text"
+                              autoCapitalize="off"
+                              autoCorrect="off"
+                              spellCheck={false}
+                              placeholder={awsBootstrapQuery.data.suggestedRoleArn}
+                              className="operational-surface"
+                              style={{ width: '100%', padding: '0.75rem 1rem' }}
+                            />
+                            <p style={{ fontSize: '0.75rem', color: 'var(--muted)', marginTop: '0.5rem' }}>
+                              Draco persists this role ARN because it is needed for future syncs. It does not grant access by itself.
+                            </p>
+                          </div>
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', display: 'flex', gap: '1rem' }}>
+                        <Info size={20} style={{ flexShrink: 0, marginTop: '2px', color: 'var(--muted)' }} />
+                        <p style={{ fontSize: '0.8125rem', color: 'var(--muted)', margin: 0 }}>
+                          Advanced fallback. Draco will store the credentials you paste here so it can keep syncing this AWS account.
+                        </p>
+                      </div>
+                      <div>
+                        <label className="micro-label" style={{ display: 'block', marginBottom: '0.5rem' }}>AWS Access Key ID</label>
+                        <input 
+                          value={awsAccessKeyId}
+                          onChange={(e) => setAwsAccessKeyId(e.target.value)}
+                          type="text"
+                          autoCapitalize="off"
+                          autoCorrect="off"
+                          spellCheck={false}
+                          placeholder="AKIA..." 
+                          className="operational-surface"
+                          style={{ width: '100%', padding: '0.75rem 1rem' }} 
+                        />
+                      </div>
+
+                      <div>
+                        <label className="micro-label" style={{ display: 'block', marginBottom: '0.5rem' }}>AWS Secret Access Key</label>
+                        <input 
+                          value={awsSecretAccessKey}
+                          onChange={(e) => setAwsSecretAccessKey(e.target.value)}
+                          type="password" 
+                          placeholder="Paste read-only IAM secret access key" 
+                          className="operational-surface"
+                          style={{ width: '100%', padding: '0.75rem 1rem' }} 
+                        />
+                      </div>
+
+                      <div>
+                        <label className="micro-label" style={{ display: 'block', marginBottom: '0.5rem' }}>AWS Session Token (Optional)</label>
+                        <input 
+                          value={awsSessionToken}
+                          onChange={(e) => setAwsSessionToken(e.target.value)}
+                          type="password" 
+                          placeholder="Paste session token for temporary credentials" 
+                          className="operational-surface"
+                          style={{ width: '100%', padding: '0.75rem 1rem' }} 
+                        />
+                      </div>
+                    </>
+                  )}
                 </>
               )}
               
               <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', display: 'flex', gap: '1rem' }}>
                 <Info size={20} style={{ flexShrink: 0, marginTop: '2px', color: 'var(--muted)' }} />
                 <p style={{ fontSize: '0.8125rem', color: 'var(--muted)', margin: 0 }}>
-                  Draco operates best with read-only access to your cloud metadata. We only ingest resource telemetry and cost signals to provide autonomous insights.
+                  {provider === 'AWS'
+                    ? awsConnectionMode === 'assume-role'
+                      ? 'The guided path avoids long-lived account secrets. Draco keeps the AWS account ID and role ARN so it can assume the role again during future syncs.'
+                      : 'Use Access Keys only when you cannot create an IAM role. Draco will need to retain those credentials so it can keep syncing this account.'
+                    : 'Draco operates best with read-only access to your cloud metadata. We only ingest resource telemetry and cost signals to provide autonomous insights.'}
                 </p>
               </div>
 
@@ -418,6 +706,18 @@ function Setup() {
                 <div style={{ color: 'var(--primary)', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                   <AlertCircle size={16} />
                   {azureAuthError}
+                </div>
+              )}
+
+              {provider === 'AWS' && awsConnectionMode === 'assume-role' && awsBootstrapQuery.isError && (
+                <div style={{ color: 'var(--primary)', fontSize: '0.875rem', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.75rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <AlertCircle size={16} />
+                    {awsBootstrapErrorMessage}
+                  </div>
+                  <button className="btn-secondary" type="button" onClick={() => void navigate({ to: '/aws-onboarding' })}>
+                    Open AWS Setup Guide
+                  </button>
                 </div>
               )}
 
@@ -433,7 +733,7 @@ function Setup() {
                 <button 
                   className="btn-primary" 
                   onClick={() => connectMutation.mutate()} 
-                  disabled={connectMutation.isPending || !isSubscriptionIdValid || (provider === 'Azure' && isAzureExchangePending)}
+                  disabled={connectMutation.isPending || !isConnectionConfigValid || (provider === 'Azure' && isAzureExchangePending)}
                 >
                   {connectMutation.isPending ? (
                     <>
@@ -499,6 +799,147 @@ function Setup() {
           </div>
         )}
       </div>
+      <Drawer
+        open={isAwsAccountDrawerOpen}
+        onOpenChange={setIsAwsAccountDrawerOpen}
+        shouldScaleBackground={false}
+      >
+        <DrawerContent>
+          <DrawerHeader style={{ borderBottom: '1px solid var(--border)' }}>
+            <DrawerTitle>Connect AWS Account</DrawerTitle>
+            <DrawerDescription>
+              Draco can guide you through a read-only IAM role setup. Paste your AWS account ID, create the role in AWS Console, then paste the role ARN back into Draco.
+            </DrawerDescription>
+          </DrawerHeader>
+          <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
+              <p style={{ fontSize: '0.875rem', color: 'var(--muted)', margin: 0 }}>
+                In AWS Console, click your account name in the top-right corner. The 12-digit Account ID appears in that menu and on the Billing and Cost Management home page. You can also open IAM and check the account details page.
+              </p>
+            </div>
+
+            <div>
+              <label className="micro-label" style={{ display: 'block', marginBottom: '0.5rem' }}>Enter AWS Account ID</label>
+              <input
+                value={subscriptionId}
+                onChange={(e) => setSubscriptionId(e.target.value)}
+                type="text"
+                placeholder="12-digit AWS account ID"
+                className="operational-surface"
+                style={{ width: '100%', padding: '0.75rem 1rem' }}
+              />
+            </div>
+
+            {subscriptionId && !isAwsAccountIdValid && (
+              <div style={{ color: 'var(--primary)', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <AlertCircle size={16} />
+                Enter the full 12-digit AWS account ID.
+              </div>
+            )}
+
+            {isAwsAccountIdValid && awsBootstrapQuery.isFetching && (
+              <div style={{ color: 'var(--muted)', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Loader2 className="animate-spin" size={16} />
+                Preparing your guided IAM role setup for account {subscriptionId}...
+              </div>
+            )}
+
+            {isAwsAccountIdValid && awsBootstrapQuery.isError && (
+              <div style={{ color: 'var(--primary)', fontSize: '0.875rem', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '0.75rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <AlertCircle size={16} />
+                  {awsBootstrapErrorMessage}
+                </div>
+                <button className="btn-secondary" type="button" onClick={() => void navigate({ to: '/aws-onboarding' })}>
+                  Open AWS Setup Guide
+                </button>
+              </div>
+            )}
+
+            {isAwsAccountIdValid && awsBootstrapQuery.data && !connectMutation.isPending && !connectMutation.isError && (
+              <div style={{ color: '#00c27a', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <CheckCircle2 size={16} />
+                Guided setup is ready for AWS account {subscriptionId}.
+              </div>
+            )}
+
+            {awsBootstrapQuery.data && (
+              <>
+                <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)' }}>Step 1</div>
+                  <div style={{ fontSize: '0.9rem', fontWeight: 700 }}>Create a new IAM role in your AWS account</div>
+                  <p style={{ fontSize: '0.8125rem', color: 'var(--muted)', margin: 0 }}>
+                    In AWS Console, open IAM, create a role with custom trust policy, and name it something like <code>{awsBootstrapQuery.data.suggestedRoleName}</code>.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2">
+                  <div>
+                    <label className="micro-label" style={{ display: 'block', marginBottom: '0.5rem' }}>Trusted Principal</label>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <input value={awsBootstrapQuery.data.trustedPrincipalArn} readOnly className="operational-surface" style={{ width: '100%', padding: '0.75rem 1rem', opacity: 0.8 }} />
+                      <button type="button" className="btn-secondary" onClick={() => void handleCopyAwsValue('drawer-trusted-principal', awsBootstrapQuery.data.trustedPrincipalArn)}>
+                        {copiedAwsValue === 'drawer-trusted-principal' ? 'Copied' : 'Copy'}
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="micro-label" style={{ display: 'block', marginBottom: '0.5rem' }}>External ID</label>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <input value={awsBootstrapQuery.data.externalId} readOnly className="operational-surface" style={{ width: '100%', padding: '0.75rem 1rem', opacity: 0.8 }} />
+                      <button type="button" className="btn-secondary" onClick={() => void handleCopyAwsValue('drawer-external-id', awsBootstrapQuery.data.externalId)}>
+                        {copiedAwsValue === 'drawer-external-id' ? 'Copied' : 'Copy'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="micro-label" style={{ display: 'block', marginBottom: '0.5rem' }}>Trust Policy</label>
+                  <textarea value={awsBootstrapQuery.data.trustPolicyJson} readOnly rows={12} className="operational-surface" style={{ width: '100%', padding: '0.75rem 1rem', fontFamily: 'var(--font-mono)', resize: 'vertical' }} />
+                </div>
+
+                <div>
+                  <label className="micro-label" style={{ display: 'block', marginBottom: '0.5rem' }}>Read-Only Permissions Policy</label>
+                  <textarea value={awsBootstrapQuery.data.permissionsPolicyJson} readOnly rows={14} className="operational-surface" style={{ width: '100%', padding: '0.75rem 1rem', fontFamily: 'var(--font-mono)', resize: 'vertical' }} />
+                </div>
+
+                <details style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '1rem' }}>
+                  <summary style={{ cursor: 'pointer', fontWeight: 700 }}>Advanced: Terraform Template</summary>
+                  <textarea value={awsBootstrapQuery.data.terraformTemplate} readOnly rows={16} className="operational-surface" style={{ width: '100%', padding: '0.75rem 1rem', fontFamily: 'var(--font-mono)', resize: 'vertical', marginTop: '1rem' }} />
+                </details>
+
+                <div style={{ background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)' }}>Step 2</div>
+                  <div style={{ fontSize: '0.9rem', fontWeight: 700 }}>Paste the created role ARN back into Draco</div>
+                  <p style={{ fontSize: '0.8125rem', color: 'var(--muted)', margin: 0 }}>
+                    Draco stores the role ARN so it can assume the role again during future syncs. The ARN itself is not a secret.
+                  </p>
+                </div>
+              </>
+            )}
+
+            {provider === 'AWS' && connectMutation.isPending && (
+              <div style={{ color: 'var(--muted)', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Loader2 className="animate-spin" size={16} />
+                Connecting AWS account...
+              </div>
+            )}
+
+            {provider === 'AWS' && connectMutation.isError && (
+              <div style={{ color: 'var(--primary)', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <AlertCircle size={16} />
+                {(connectMutation.error as Error).message}
+              </div>
+            )}
+          </div>
+          <DrawerFooter style={{ borderTop: '1px solid var(--border)', padding: '1rem 1.25rem' }}>
+            <DrawerClose asChild>
+              <button className="btn-secondary">Close</button>
+            </DrawerClose>
+          </DrawerFooter>
+        </DrawerContent>
+      </Drawer>
     </div>
   )
 }

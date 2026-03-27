@@ -11,6 +11,8 @@ using Amazon.Runtime.Internal.Auth;
 using Amazon.Runtime.Internal.Util;
 using Amazon.S3;
 using Amazon.S3.Model;
+using Amazon.SecurityToken;
+using Amazon.SecurityToken.Model;
 using Draco.Application.Interfaces;
 using Draco.Application.Models;
 using Draco.Domain.Entities;
@@ -41,16 +43,17 @@ public class AWSProvider : ICloudProvider
         _logger.LogInformation("Starting AWS resource discovery...");
 
         var resources = new List<CloudResource>();
+        var connectionContext = await ResolveConnectionContextAsync(accessToken, cancellationToken);
 
         try
         {
-            using var regionClient = new AmazonEC2Client();
+            using var regionClient = CreateEc2Client(connectionContext);
             var regions = await regionClient.DescribeRegionsAsync(new DescribeRegionsRequest(), cancellationToken);
 
             foreach (var region in regions.Regions.Where(region => !string.IsNullOrWhiteSpace(region.RegionName)))
             {
                 var regionEndpoint = RegionEndpoint.GetBySystemName(region.RegionName);
-                using var ec2Client = new AmazonEC2Client(regionEndpoint);
+                using var ec2Client = CreateEc2Client(connectionContext, regionEndpoint);
                 string? nextToken = null;
 
                 do
@@ -82,7 +85,7 @@ public class AWSProvider : ICloudProvider
                 while (!string.IsNullOrWhiteSpace(nextToken));
             }
 
-            using var s3Client = new AmazonS3Client(RegionEndpoint.USEast1);
+            using var s3Client = CreateS3Client(connectionContext, RegionEndpoint.USEast1);
             var buckets = await s3Client.ListBucketsAsync(cancellationToken);
             foreach (var bucket in buckets.Buckets)
             {
@@ -140,13 +143,15 @@ public class AWSProvider : ICloudProvider
         {
             using var httpClient = new HttpClient();
             var budgets = new List<ProviderBudgetSnapshot>();
+            var connectionContext = await ResolveConnectionContextAsync(accessToken, cancellationToken);
             var config = new AmazonCloudWatchConfig
             {
                 AuthenticationRegion = RegionEndpoint.USEast1.SystemName,
                 AuthenticationServiceName = "budgets",
                 ServiceURL = "https://budgets.amazonaws.com"
             };
-            var credentials = FallbackCredentialsFactory.GetCredentials(config, false).GetCredentials();
+            var immutableCredentials = connectionContext.Credentials?.GetCredentials()
+                ?? FallbackCredentialsFactory.GetCredentials(config, false).GetCredentials();
             string? nextToken = null;
 
             do
@@ -174,9 +179,9 @@ public class AWSProvider : ICloudProvider
                 signedRequest.Headers["Content-Type"] = "application/x-amz-json-1.1";
                 signedRequest.Headers["X-Amz-Target"] = "AWSBudgetServiceGateway.DescribeBudgets";
 
-                if (!string.IsNullOrWhiteSpace(credentials.Token))
+                if (!string.IsNullOrWhiteSpace(immutableCredentials.Token))
                 {
-                    signedRequest.Headers["X-Amz-Security-Token"] = credentials.Token;
+                    signedRequest.Headers["X-Amz-Security-Token"] = immutableCredentials.Token;
                 }
 
                 var signer = new AWS4Signer();
@@ -184,8 +189,8 @@ public class AWSProvider : ICloudProvider
                     signedRequest,
                     config,
                     new RequestMetrics(),
-                    credentials.AccessKey,
-                    credentials.SecretKey);
+                    immutableCredentials.AccessKey,
+                    immutableCredentials.SecretKey);
 
                 foreach (var header in signedRequest.Headers)
                 {
@@ -266,7 +271,7 @@ public class AWSProvider : ICloudProvider
 
         try
         {
-            using var client = new AmazonCostExplorerClient(RegionEndpoint.USEast1);
+            using var client = CreateCostExplorerClient(await ResolveConnectionContextAsync(accessToken, cancellationToken));
             var periodStart = new DateTimeOffset(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1, 0, 0, 0, TimeSpan.Zero);
             var periodEnd = periodStart.AddMonths(1);
             var request = new GetCostAndUsageWithResourcesRequest
@@ -393,7 +398,8 @@ public class AWSProvider : ICloudProvider
 
         try
         {
-            using var client = new AmazonCloudWatchClient(ResolveRegion(resource));
+            var connectionContext = await ResolveConnectionContextAsync(accessToken, cancellationToken);
+            using var client = CreateCloudWatchClient(connectionContext, ResolveRegion(resource, connectionContext.Region));
             var endTime = DateTime.UtcNow;
             var startTime = endTime.Subtract(timespan);
             var request = new GetMetricDataRequest
@@ -592,7 +598,7 @@ public class AWSProvider : ICloudProvider
         return new(StringComparer.OrdinalIgnoreCase);
     }
 
-    private static RegionEndpoint ResolveRegion(CloudResource resource)
+    private static RegionEndpoint ResolveRegion(CloudResource resource, RegionEndpoint fallbackRegion)
     {
         if (!string.IsNullOrWhiteSpace(resource.Location))
         {
@@ -605,8 +611,124 @@ public class AWSProvider : ICloudProvider
             return RegionEndpoint.GetBySystemName(parts[3]);
         }
 
-        return RegionEndpoint.USEast1;
+        return fallbackRegion;
     }
+
+    private async Task<AwsConnectionContext> ResolveConnectionContextAsync(string? accessToken, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(accessToken))
+        {
+            return new AwsConnectionContext(null, RegionEndpoint.USEast1, null);
+        }
+
+        var payload = ParseConnectionPayload(accessToken);
+        if (payload is null)
+        {
+            throw new InvalidOperationException("AWS connection payload is invalid. Reconnect this account using Draco's Assume Role or Access Keys flow.");
+        }
+
+        var region = !string.IsNullOrWhiteSpace(payload.Region)
+            ? RegionEndpoint.GetBySystemName(payload.Region.Trim())
+            : RegionEndpoint.USEast1;
+
+        if (string.Equals(payload.Kind, "AwsAssumeRole", StringComparison.OrdinalIgnoreCase))
+        {
+            if (string.IsNullOrWhiteSpace(payload.RoleArn) || string.IsNullOrWhiteSpace(payload.ExternalId))
+            {
+                throw new InvalidOperationException("AWS role-based connection is missing a role ARN or external ID.");
+            }
+
+            try
+            {
+                using var stsClient = CreateStsClient(region);
+                var response = await stsClient.AssumeRoleAsync(new AssumeRoleRequest
+                {
+                    RoleArn = payload.RoleArn.Trim(),
+                    ExternalId = payload.ExternalId.Trim(),
+                    RoleSessionName = string.IsNullOrWhiteSpace(payload.RoleSessionName)
+                        ? $"draco-{Guid.NewGuid():N}"[..20]
+                        : payload.RoleSessionName.Trim(),
+                    DurationSeconds = 3600
+                }, cancellationToken);
+
+                return new AwsConnectionContext(
+                    new SessionAWSCredentials(
+                        response.Credentials.AccessKeyId,
+                        response.Credentials.SecretAccessKey,
+                        response.Credentials.SessionToken),
+                    region,
+                    payload);
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException(
+                    $"AWS AssumeRole failed for {payload.RoleArn.Trim()}. Verify the Terraform-created trust policy, external ID, and Draco AWS principal.",
+                    ex);
+            }
+        }
+
+        if (!string.Equals(payload.Kind, "AwsStaticCredentials", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("AWS connection payload kind must be AwsAssumeRole or AwsStaticCredentials.");
+        }
+
+        if (string.IsNullOrWhiteSpace(payload.AccessKeyId) || string.IsNullOrWhiteSpace(payload.SecretAccessKey))
+        {
+            throw new InvalidOperationException("AWS credential-based connection is missing an access key ID or secret access key.");
+        }
+
+        AWSCredentials credentials = string.IsNullOrWhiteSpace(payload.SessionToken)
+            ? new BasicAWSCredentials(payload.AccessKeyId.Trim(), payload.SecretAccessKey.Trim())
+            : new SessionAWSCredentials(payload.AccessKeyId.Trim(), payload.SecretAccessKey.Trim(), payload.SessionToken.Trim());
+
+        return new AwsConnectionContext(credentials, region, payload);
+    }
+
+    private AwsCredentialPayload? ParseConnectionPayload(string? accessToken)
+    {
+        if (string.IsNullOrWhiteSpace(accessToken) || !accessToken.TrimStart().StartsWith("{", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        try
+        {
+            var payload = JsonSerializer.Deserialize<AwsCredentialPayload>(accessToken, new JsonSerializerOptions(JsonSerializerDefaults.Web)
+            {
+                PropertyNameCaseInsensitive = true
+            });
+
+            return payload;
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogDebug(ex, "AWS connection token payload was not valid JSON credentials.");
+            return null;
+        }
+    }
+
+    private static AmazonEC2Client CreateEc2Client(AwsConnectionContext context, RegionEndpoint? region = null) =>
+        context.Credentials is null
+            ? new AmazonEC2Client(region ?? context.Region)
+            : new AmazonEC2Client(context.Credentials, region ?? context.Region);
+
+    private static AmazonS3Client CreateS3Client(AwsConnectionContext context, RegionEndpoint region) =>
+        context.Credentials is null
+            ? new AmazonS3Client(region)
+            : new AmazonS3Client(context.Credentials, region);
+
+    private static AmazonCostExplorerClient CreateCostExplorerClient(AwsConnectionContext context) =>
+        context.Credentials is null
+            ? new AmazonCostExplorerClient(RegionEndpoint.USEast1)
+            : new AmazonCostExplorerClient(context.Credentials, RegionEndpoint.USEast1);
+
+    private static AmazonCloudWatchClient CreateCloudWatchClient(AwsConnectionContext context, RegionEndpoint region) =>
+        context.Credentials is null
+            ? new AmazonCloudWatchClient(region)
+            : new AmazonCloudWatchClient(context.Credentials, region);
+
+    private static AmazonSecurityTokenServiceClient CreateStsClient(RegionEndpoint region) =>
+        new(region);
 
     private sealed record AwsMetricMapping(
         string Namespace,
@@ -615,6 +737,23 @@ public class AWSProvider : ICloudProvider
         string Unit,
         string CanonicalMetricName,
         Dictionary<string, string> Dimensions);
+
+    private sealed record AwsConnectionContext(
+        AWSCredentials? Credentials,
+        RegionEndpoint Region,
+        AwsCredentialPayload? Payload);
+
+    private sealed class AwsCredentialPayload
+    {
+        public string? Kind { get; set; }
+        public string? AccessKeyId { get; set; }
+        public string? SecretAccessKey { get; set; }
+        public string? SessionToken { get; set; }
+        public string? RoleArn { get; set; }
+        public string? ExternalId { get; set; }
+        public string? RoleSessionName { get; set; }
+        public string? Region { get; set; }
+    }
 
     private sealed class RawAwsRequest : AmazonWebServiceRequest
     {
