@@ -3,7 +3,7 @@ import { Route as rootRoute } from './__root'
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { User, Bell, Key, Lock, Plus, Loader2, AlertCircle, CheckCircle2, RefreshCcw, Unplug, ShieldCheck, Info, Mail, Trash2 } from 'lucide-react'
-import { dracoApi, type AzureSubscriptionOption, type CloudConnection } from '../lib/api'
+import { API_BASE_URL, dracoApi, type AzureSubscriptionOption, type CloudConnection } from '../lib/api'
 import { copyToClipboard, getAwsBootstrapErrorMessage } from '../lib/awsOnboarding'
 import azureLogo from '../assets/azure-logo.svg'
 import awsLogo from '../assets/aws-logo.svg'
@@ -269,7 +269,7 @@ function Settings() {
       setAzureAuthError(null)
       const state = crypto.randomUUID()
       sessionStorage.setItem('draco:azure:oauth-state', state)
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:5020'}/api/cloud-connections/azure/authorize-url?redirectUri=${encodeURIComponent(`${window.location.origin}/settings`)}&state=${encodeURIComponent(state)}`, {
+      const response = await fetch(`${API_BASE_URL}/api/cloud-connections/azure/authorize-url?redirectUri=${encodeURIComponent(`${window.location.origin}/settings`)}&state=${encodeURIComponent(state)}`, {
         headers: { Authorization: `Bearer ${dracoApi.auth.getToken()}` },
       })
       if (!response.ok) throw new Error('Microsoft sign-in could not be started.')
