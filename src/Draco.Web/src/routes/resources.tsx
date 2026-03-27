@@ -42,9 +42,6 @@ function Resources() {
   const [search, setSearch] = useState(sentinelSearch.search || '')
   const [selectedResourceId, setSelectedResourceId] = useState<string | null>(null)
   const [selectedGroupKey, setSelectedGroupKey] = useState<string | null>(sentinelSearch.resourceGroup ? `*::*::${sentinelSearch.resourceGroup}` : null)
-  const [isExcludedSectionVisible, setIsExcludedSectionVisible] = useState(false)
-  const [currentPage, setCurrentPage] = useState(1)
-  const ITEMS_PER_PAGE = 50
   const [lastActionResult, setLastActionResult] = useState<ResourceActionExecutionResult | null>(null)
   const [sortConfig, setSortConfig] = useState<{
     field: 'monthlyCost' | 'location' | 'provider' | null;
@@ -119,7 +116,7 @@ function Resources() {
 
   const filteredResources = useMemo(() => {
     let items = resources || []
-    
+
     // Apply URL-based filters
     if (sentinelSearch.provider) {
       items = items.filter(r => r.provider.toLowerCase() === sentinelSearch.provider?.toLowerCase())
@@ -196,7 +193,7 @@ function Resources() {
       const costA = preferredRollupIds.has(left.id) ? left.monthlyCost : -1
       const costB = preferredRollupIds.has(right.id) ? right.monthlyCost : -1
       if (costA !== costB) return costB - costA
-      
+
       return left.name.localeCompare(right.name)
     })
 
@@ -288,8 +285,8 @@ function Resources() {
 
   const renderSortIcon = (field: 'monthlyCost' | 'location' | 'provider') => {
     if (sortConfig.field !== field) return <ArrowUpDown size={12} style={{ opacity: 0.2, marginLeft: '0.4rem' }} />
-    return sortConfig.direction === 'asc' 
-      ? <ChevronUp size={12} style={{ marginLeft: '0.4rem', color: 'var(--primary)' }} /> 
+    return sortConfig.direction === 'asc'
+      ? <ChevronUp size={12} style={{ marginLeft: '0.4rem', color: 'var(--primary)' }} />
       : <ChevronDown size={12} style={{ marginLeft: '0.4rem', color: 'var(--primary)' }} />
   }
 
@@ -337,18 +334,6 @@ function Resources() {
 
     return () => window.clearInterval(intervalId)
   }, [connections, syncMutation, AUTO_SYNC_INTERVAL_MS])
-
-  // Sync sidebar selection with URL filter
-  useEffect(() => {
-    if (sentinelSearch.resourceGroup) {
-      const match = groupedResources.find(g => g.resourceGroupName.toLowerCase() === sentinelSearch.resourceGroup?.toLowerCase())
-      if (match) {
-        setSelectedGroupKey(match.key)
-      }
-    } else {
-      setSelectedGroupKey(null)
-    }
-  }, [sentinelSearch.resourceGroup, groupedResources])
 
   const activeResource = resourceDetail?.resource ?? selectedListResource
   const activeCost = resourceDetail?.cost
@@ -442,7 +427,7 @@ function Resources() {
 
   const sortedResources = useMemo(() => {
     let items = [...filteredResources]
-    
+
     // If a group is selected, filter to only those resources
     if (selectedGroupKey) {
       items = items.filter(r => {
@@ -475,34 +460,18 @@ function Resources() {
       const subscriptionComparison = left.subscriptionId.localeCompare(right.subscriptionId)
       if (subscriptionComparison !== 0) return subscriptionComparison
 
-      const resourceGroupNameA = left.resourceGroupName || 'Ungrouped'
-      const resourceGroupNameB = right.resourceGroupName || 'Ungrouped'
-      const resourceGroupComparison = resourceGroupNameA.localeCompare(resourceGroupNameB)
+      const resourceGroupComparison = (left.resourceGroupName || 'Ungrouped').localeCompare(right.resourceGroupName || 'Ungrouped')
       if (resourceGroupComparison !== 0) return resourceGroupComparison
 
       const costA = preferredRollupIds.has(left.id) ? left.monthlyCost : -1
       const costB = preferredRollupIds.has(right.id) ? right.monthlyCost : -1
       if (costA !== costB) return costB - costA
-      
+
       return left.name.localeCompare(right.name)
     })
 
     return items
-  }, [filteredResources, selectedGroupKey, sortConfig, preferredRollupIds])
-
-  const actualResources = useMemo(() => sortedResources.filter(r => preferredRollupIds.has(r.id)), [sortedResources, preferredRollupIds])
-  const excludedResources = useMemo(() => sortedResources.filter(r => !preferredRollupIds.has(r.id)), [sortedResources, preferredRollupIds])
-
-  const paginatedActualResources = useMemo(() => {
-    const start = (currentPage - 1) * ITEMS_PER_PAGE
-    return actualResources.slice(start, start + ITEMS_PER_PAGE)
-  }, [actualResources, currentPage])
-
-  const totalPages = Math.max(1, Math.ceil(actualResources.length / ITEMS_PER_PAGE))
-
-  useEffect(() => {
-    setCurrentPage(1)
-  }, [selectedGroupKey, search, sentinelSearch.provider, sentinelSearch.resourceGroup])
+  }, [filteredResources, selectedGroupKey, sortConfig])
 
   return (
     <div className="animate-fade-in" style={{ fontFamily: 'Roboto, sans-serif' }}>
@@ -567,20 +536,17 @@ function Resources() {
         <div style={{ position: 'sticky', top: '2rem', display: 'flex', flexDirection: 'column', gap: '1.5rem', maxHeight: 'calc(100vh - 4rem)' }}>
           <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
             <div className="micro-label" style={{ marginBottom: '1rem', opacity: 0.5 }}>Account Groups</div>
-            <div style={{ 
-              display: 'flex', 
-              flexDirection: 'column', 
-              gap: '0.4rem', 
-              overflowY: 'auto', 
+            <div style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '0.4rem',
+              overflowY: 'auto',
               paddingRight: '0.5rem',
               scrollbarWidth: 'thin',
               scrollbarColor: 'var(--border) transparent'
             }}>
               <button
-                onClick={() => {
-                  setSelectedGroupKey(null)
-                  navigate({ to: '/resources', search: (prev: any) => ({ ...prev, resourceGroup: undefined }) })
-                }}
+                onClick={() => setSelectedGroupKey(null)}
                 style={{
                   display: 'flex',
                   justifyContent: 'space-between',
@@ -605,10 +571,7 @@ function Resources() {
               {groupedResources.map(group => (
                 <button
                   key={group.key}
-                  onClick={() => {
-                    setSelectedGroupKey(group.key)
-                    navigate({ to: '/resources', search: (prev: any) => ({ ...prev, resourceGroup: group.resourceGroupName }) })
-                  }}
+                  onClick={() => setSelectedGroupKey(group.key)}
                   style={{
                     display: 'flex',
                     flexDirection: 'column',
@@ -661,8 +624,8 @@ function Resources() {
               <thead>
                 <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--border)' }}>
                   <th className="micro-label" style={{ padding: '0.6rem 0.75rem' }}>Asset & Type</th>
-                  <th 
-                    className="micro-label" 
+                  <th
+                    className="micro-label"
                     style={{ padding: '0.6rem 0.75rem', cursor: 'pointer', userSelect: 'none' }}
                     onClick={() => toggleSort('provider')}
                   >
@@ -670,8 +633,8 @@ function Resources() {
                       Provider {renderSortIcon('provider')}
                     </div>
                   </th>
-                  <th 
-                    className="micro-label" 
+                  <th
+                    className="micro-label"
                     style={{ padding: '0.6rem 0.75rem', cursor: 'pointer', userSelect: 'none' }}
                     onClick={() => toggleSort('location')}
                   >
@@ -679,8 +642,8 @@ function Resources() {
                       Region {renderSortIcon('location')}
                     </div>
                   </th>
-                  <th 
-                    className="micro-label" 
+                  <th
+                    className="micro-label"
                     style={{ padding: '0.6rem 0.75rem', textAlign: 'right', cursor: 'pointer', userSelect: 'none' }}
                     onClick={() => toggleSort('monthlyCost')}
                   >
@@ -691,7 +654,7 @@ function Resources() {
                 </tr>
               </thead>
               <tbody>
-                {paginatedActualResources.map((resource) => (
+                {sortedResources.map((resource) => (
                   <tr key={resource.id} className="operational-row" onClick={() => setSelectedResourceId(resource.id)} style={{ cursor: 'pointer' }}>
                     <td style={{ padding: '0.6rem 0.75rem' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -707,102 +670,24 @@ function Resources() {
                     </td>
                     <td style={{ padding: '0.6rem 0.75rem', color: 'var(--muted-foreground)' }}>{resource.location}</td>
                     <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>
-                      <div style={{ fontWeight: 800 }}>
-                        {formatResourceAmount(resource.monthlyCost, resource.currency)}
-                      </div>
+                      {preferredRollupIds.has(resource.id) ? (
+                        <div style={{ fontWeight: 800 }}>
+                          {formatResourceAmount(resource.monthlyCost, resource.currency)}
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.15rem' }}>
+                          <div style={{ fontWeight: 800, color: 'var(--muted)' }}>Excluded</div>
+                          <div style={{ fontSize: '0.68rem', color: 'var(--muted)' }}>
+                            Est. {formatResourceAmount(resource.monthlyCost, resource.currency)}
+                          </div>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}
-                {paginatedActualResources.length === 0 && (
-                  <tr>
-                    <td colSpan={4} style={{ padding: '3rem', textAlign: 'center', color: 'var(--muted)' }}>No resources found with identified cost values.</td>
-                  </tr>
-                )}
               </tbody>
             </table>
           </div>
-
-          {totalPages > 1 && (
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1rem', marginTop: '0.5rem' }}>
-              <button 
-                className="btn-secondary" 
-                disabled={currentPage === 1} 
-                onClick={() => setCurrentPage(p => p - 1)}
-                style={{ fontSize: '0.75rem', padding: '0.35rem 0.75rem' }}
-              >
-                Previous
-              </button>
-              <span className="micro-label" style={{ opacity: 0.6 }}>Page {currentPage} of {totalPages}</span>
-              <button 
-                className="btn-secondary" 
-                disabled={currentPage === totalPages} 
-                onClick={() => setCurrentPage(p => p + 1)}
-                style={{ fontSize: '0.75rem', padding: '0.35rem 0.75rem' }}
-              >
-                Next
-              </button>
-            </div>
-          )}
-
-          {excludedResources.length > 0 && (
-            <div style={{ marginTop: '1rem' }}>
-              <button 
-                onClick={() => setIsExcludedSectionVisible(!isExcludedSectionVisible)}
-                style={{ 
-                  background: 'transparent', 
-                  border: 'none', 
-                  color: 'var(--muted)', 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  gap: '0.5rem', 
-                  cursor: 'pointer',
-                  padding: 0,
-                  fontSize: '0.75rem',
-                  fontWeight: 600
-                }}
-              >
-                {isExcludedSectionVisible ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                {isExcludedSectionVisible ? 'Hide' : 'Show'} {excludedResources.length} non-billable or estimate-only resources
-              </button>
-
-              {isExcludedSectionVisible && (
-                <div className="operational-surface" style={{ marginTop: '1rem', overflow: 'hidden', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', opacity: 0.8 }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.8125rem' }}>
-                    <thead>
-                      <tr style={{ background: 'rgba(255,255,255,0.01)', borderBottom: '1px solid var(--border)' }}>
-                        <th className="micro-label" style={{ padding: '0.5rem 0.75rem', opacity: 0.4 }}>Asset & Type</th>
-                        <th className="micro-label" style={{ padding: '0.5rem 0.75rem', opacity: 0.4 }}>Provider</th>
-                        <th className="micro-label" style={{ padding: '0.5rem 0.75rem', opacity: 0.4 }}>Region</th>
-                        <th className="micro-label" style={{ padding: '0.5rem 0.75rem', textAlign: 'right', opacity: 0.4 }}>Estimated Cost</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {excludedResources.map((resource) => (
-                        <tr key={resource.id} className="operational-row" onClick={() => setSelectedResourceId(resource.id)} style={{ cursor: 'pointer' }}>
-                          <td style={{ padding: '0.5rem 0.75rem', opacity: 0.7 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                              <div style={{ color: 'var(--muted-foreground)', flexShrink: 0 }}>{getIcon(resource.type)}</div>
-                              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                <span style={{ fontWeight: 700 }}>{resource.name}</span>
-                                <span style={{ fontSize: '0.65rem', color: 'var(--muted)' }}>{resource.type}</span>
-                              </div>
-                            </div>
-                          </td>
-                          <td style={{ padding: '0.5rem 0.75rem' }}>
-                            <span className="badge" style={{ background: 'rgba(255,255,255,0.03)', fontSize: '0.6rem', padding: '0.1rem 0.4rem', opacity: 0.6 }}>{resource.provider}</span>
-                          </td>
-                          <td style={{ padding: '0.5rem 0.75rem', color: 'var(--muted-foreground)', opacity: 0.6 }}>{resource.location}</td>
-                          <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', opacity: 0.6 }}>
-                            <div style={{ fontSize: '0.75rem' }}>{formatResourceAmount(resource.monthlyCost, resource.currency)}</div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          )}
         </div>
       </div>
 
