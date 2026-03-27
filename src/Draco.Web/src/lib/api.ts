@@ -507,8 +507,8 @@ async function fetchWithAuth<T>(endpoint: string, options: RequestInit = {}): Pr
       error.title ||
       (typeof error.errors === 'object' && error.errors !== null
         ? Object.values(error.errors)
-          .flatMap((value) => Array.isArray(value) ? value : [String(value)])
-          .join(' ')
+            .flatMap((value) => Array.isArray(value) ? value : [String(value)])
+            .join(' ')
         : undefined) ||
       'API request failed'
     throw new Error(message)
