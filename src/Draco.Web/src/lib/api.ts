@@ -1,4 +1,25 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5020'
+function normalizeApiBaseUrl(value?: string) {
+  const fallback = 'http://localhost:5020'
+  const raw = value?.trim()
+
+  if (!raw) {
+    return fallback
+  }
+
+  const normalized = raw.replace(/\/+$/, '')
+
+  if (/^https?:\/\//i.test(normalized)) {
+    return normalized
+  }
+
+  if (/^(localhost|127(?:\.\d{1,3}){3})(:\d+)?$/i.test(normalized)) {
+    return `http://${normalized}`
+  }
+
+  return `https://${normalized}`
+}
+
+export const API_BASE_URL = normalizeApiBaseUrl(import.meta.env.VITE_API_URL)
 const WORKOS_CLIENT_ID = import.meta.env.VITE_WORKOS_CLIENT_ID
 const WORKOS_AUTHORIZE_URL = 'https://api.workos.com/user_management/authorize'
 const WORKOS_CODE_VERIFIER_STORAGE_KEY = 'draco:workos:code-verifier'
