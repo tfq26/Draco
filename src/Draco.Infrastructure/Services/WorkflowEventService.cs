@@ -63,7 +63,7 @@ public class WorkflowEventService
                     Provider = workflowEvent.Provider,
                     SubscriptionId = workflowEvent.SubscriptionId,
                     ResourceId = workflowEvent.ResourceId,
-                    CanAutoRun = workflowEvent.Category is "ConnectionHealth" or "Budget"
+                    CanAutoRun = false
                 });
             }
 

@@ -535,7 +535,7 @@ public class InsightContextService : IInsightContextService
                 Provider = anomaly.Provider,
                 SubscriptionId = anomaly.SubscriptionId,
                 ResourceId = anomaly.ResourceId,
-                CanAutoRun = anomaly.Category is "ConnectionHealth" or "Budget"
+                CanAutoRun = false
             });
         }
 

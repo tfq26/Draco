@@ -373,6 +373,66 @@ export interface WorkflowRun {
   completedAt?: string
 }
 
+export interface AutonomousResourceObservation {
+  resourceId: string
+  resourceName: string
+  resourceType: string
+  provider: string
+  location: string
+  subscriptionId: string
+  resourceGroupName: string
+  monthlyCost?: number
+  currency: string
+  costSource: string
+  recommendation?: string
+  recommendationType?: string
+  potentialSavings?: number
+}
+
+export interface AutonomousActionProposal {
+  resourceId: string
+  resourceName: string
+  provider: string
+  action: string
+  label: string
+  description: string
+  reason: string
+  isDestructive: boolean
+  approvalRequired: boolean
+}
+
+export interface AutonomousWorkflowProposal {
+  id: string
+  trigger: string
+  suggestedAction: string
+  severity: string
+  reason: string
+  resourceId?: string
+  provider: string
+  approvalRequired: boolean
+}
+
+export interface AutonomousInsightReport {
+  query: string
+  focusArea: string
+  approvalPolicy: string
+  generatedAt: string
+  overview: InsightOverview
+  resourcesInScope: AutonomousResourceObservation[]
+  findings: string[]
+  proposedActions: AutonomousActionProposal[]
+  suggestedWorkflows: AutonomousWorkflowProposal[]
+  narrative: string
+}
+
+export interface AutonomousInsightQueryResponse {
+  answer: string
+  report: AutonomousInsightReport
+  contextSummary: InsightOverview
+  workflowSuggestions: AutonomousWorkflowProposal[]
+  proposedActions: AutonomousActionProposal[]
+}
+
 export interface GovernancePolicy {
   id: string
   name: string
@@ -635,6 +695,11 @@ export const dracoApi = {
       return normalizeDashboardSummary(await fetchWithAuth<DashboardSummary>(url))
     },
     getAiContext: () => fetchWithAuth<{ context: DashboardSummary; modelContext: string }>('/api/ai/context'),
+    queryInsights: (query: string) =>
+      fetchWithAuth<AutonomousInsightQueryResponse>('/api/ai/query', {
+        method: 'POST',
+        body: JSON.stringify({ query }),
+      }),
   },
   monitoring: {
     getStats: () => fetchWithAuth<Record<string, number | string | null>>('/api/monitoring/stats'),

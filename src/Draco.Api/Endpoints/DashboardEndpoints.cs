@@ -287,8 +287,7 @@ public static class DashboardEndpoints
         [FromBody] AiQueryRequest request,
         ClaimsPrincipal userPrincipal,
         DracoDbContext dbContext,
-        IAIService aiService,
-        IInsightContextService insightContextService,
+        IAutonomousInsightService autonomousInsightService,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.Query))
@@ -296,22 +295,25 @@ public static class DashboardEndpoints
             return Results.BadRequest(new { message = "Query is required." });
         }
 
-        var context = await ResolveInsightContextAsync(userPrincipal, dbContext, insightContextService, cancellationToken);
-        if (context is null)
+        var user = await userPrincipal.GetCurrentUserAsync(dbContext, cancellationToken);
+        if (user is null)
         {
             return Results.Unauthorized();
         }
 
-        var answer = await aiService.ProcessQueryAsync(
-            request.Query.Trim(),
-            insightContextService.SerializeForModel(context),
-            cancellationToken);
+        var response = await autonomousInsightService.AnswerUserQueryAsync(user.Id, request.Query.Trim(), cancellationToken);
+        if (response is null)
+        {
+            return Results.NotFound(new { message = "Insight context not available." });
+        }
 
         return Results.Ok(new
         {
-            answer,
-            contextSummary = context.Overview,
-            workflowSuggestions = context.WorkflowSuggestions.Take(5)
+            answer = response.Narrative,
+            report = response,
+            contextSummary = response.Overview,
+            workflowSuggestions = response.SuggestedWorkflows.Take(5),
+            proposedActions = response.ProposedActions
         });
     }
 
