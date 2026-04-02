@@ -7,6 +7,7 @@ import dracoBlack from '../assets/draco-black.svg'
 import dracoColored from '../assets/draco-colored.svg'
 import { dracoApi } from '../lib/api'
 import { NotificationDrawer } from '../components/NotificationDrawer'
+import { AssistantWidget } from '../components/AssistantWidget'
 
 export const Route = createRootRoute({
   component: RootComponent,
@@ -260,6 +261,7 @@ function RootComponent() {
           <Outlet />
         </main>
       </div>
+      {hasToken && <AssistantWidget />}
       <TanStackRouterDevtools />
     </>
   )

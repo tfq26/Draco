@@ -54,6 +54,7 @@ builder.Services.AddScoped<PulseReportService>();
 builder.Services.AddScoped<ICostGovernanceService, CostGovernanceService>();
 builder.Services.AddScoped<ITelemetryService, TelemetryService>();
 builder.Services.AddScoped<IInsightContextService, InsightContextService>();
+builder.Services.AddScoped<IAutonomousInsightService, AutonomousInsightService>();
 builder.Services.AddScoped<IResourceActionService, TerraformResourceActionService>();
 builder.Services.AddScoped<INotificationEvaluationService, NotificationEvaluationService>();
 builder.Services.AddScoped<INotificationRule, BudgetThresholdNotificationRule>();

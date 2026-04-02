@@ -175,7 +175,6 @@ RAW DATA:
     {
         using var scope = _serviceProvider.CreateScope();
         var governanceService = scope.ServiceProvider.GetRequiredService<ICostGovernanceService>();
-        var providers = scope.ServiceProvider.GetServices<ICloudProvider>();
 
         try 
         {
@@ -198,13 +197,8 @@ RAW DATA:
                 case "stop_resource":
                     var resourceId = args.GetProperty("resourceId").GetString();
                     var providerStop = args.GetProperty("provider").GetString();
-                    var cloudProvider = providers.FirstOrDefault(p => p.ProviderName == providerStop);
-                    if (cloudProvider != null)
-                    {
-                        var success = await cloudProvider.StopResourceAsync(resourceId!);
-                        return success ? $"Successfully stopped resource {resourceId}." : $"Failed to stop resource {resourceId}.";
-                    }
-                    return $"Provider {providerStop} not found.";
+                    _logger.LogWarning("Blocked AI-initiated stop request for resource {ResourceId} on provider {Provider}. User approval is required.", resourceId, providerStop);
+                    return $"Action proposal only: stopping resource {resourceId} on {providerStop} requires explicit user approval and was not executed.";
 
                 default:
                     return "I'm sorry, that capability is not yet available in Draco. 🐉";
