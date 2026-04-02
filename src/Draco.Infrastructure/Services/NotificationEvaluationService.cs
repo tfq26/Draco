@@ -12,20 +12,33 @@ public class NotificationEvaluationService : INotificationEvaluationService
 {
     private readonly DracoDbContext _dbContext;
     private readonly IEnumerable<INotificationRule> _rules;
+    private readonly INotificationDeliveryService _notificationDeliveryService;
     private readonly ILogger<NotificationEvaluationService> _logger;
 
     public NotificationEvaluationService(
         DracoDbContext dbContext,
         IEnumerable<INotificationRule> rules,
+        INotificationDeliveryService notificationDeliveryService,
         ILogger<NotificationEvaluationService> logger)
     {
         _dbContext = dbContext;
         _rules = rules;
+        _notificationDeliveryService = notificationDeliveryService;
         _logger = logger;
     }
 
     public async Task<NotificationRefreshResult> RefreshUserNotificationsAsync(Guid userId, CancellationToken cancellationToken = default)
     {
+        var userAccount = await _dbContext.UserAccounts
+            .AsNoTracking()
+            .FirstOrDefaultAsync(user => user.Id == userId, cancellationToken);
+
+        if (userAccount is null)
+        {
+            _logger.LogWarning("Notification refresh skipped because user {UserId} was not found.", userId);
+            return new NotificationRefreshResult();
+        }
+
         var connections = await _dbContext.CloudConnections
             .AsNoTracking()
             .Where(connection => connection.UserId == userId && connection.IsActive)
@@ -120,12 +133,13 @@ public class NotificationEvaluationService : INotificationEvaluationService
         var updatedCount = 0;
         var resolvedCount = 0;
         var now = DateTime.UtcNow;
+        var notificationsToDispatch = new List<SystemNotification>();
 
         foreach (var candidate in candidates)
         {
             if (!notificationMap.TryGetValue(candidate.NotificationKey, out var notification))
             {
-                _dbContext.SystemNotifications.Add(new SystemNotification
+                notification = new SystemNotification
                 {
                     UserId = userId,
                     NotificationKey = candidate.NotificationKey,
@@ -144,9 +158,12 @@ public class NotificationEvaluationService : INotificationEvaluationService
                     CreatedAt = now,
                     LastEvaluatedAt = now,
                     IsRead = false
-                });
+                };
+
+                _dbContext.SystemNotifications.Add(notification);
 
                 createdCount++;
+                notificationsToDispatch.Add(notification);
                 continue;
             }
 
@@ -170,6 +187,7 @@ public class NotificationEvaluationService : INotificationEvaluationService
             {
                 notification.CreatedAt = now;
                 notification.IsRead = false;
+                notificationsToDispatch.Add(notification);
             }
 
             updatedCount++;
@@ -185,6 +203,11 @@ public class NotificationEvaluationService : INotificationEvaluationService
         }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
+
+        foreach (var notification in notificationsToDispatch)
+        {
+            await _notificationDeliveryService.DeliverAsync(userAccount, notification, cancellationToken);
+        }
 
         _logger.LogInformation(
             "Notification refresh completed for user {UserId}. Active: {ActiveCount}, created: {CreatedCount}, updated: {UpdatedCount}, resolved: {ResolvedCount}",

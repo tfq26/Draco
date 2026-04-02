@@ -17,8 +17,16 @@ function Index() {
     enabled: hasToken,
   })
 
-  const primaryTarget = !hasToken ? '/login' : user?.isSetupComplete ? '/dashboard' : '/setup'
-  const secondaryTarget = hasToken ? '/resources' : '/login'
+  const primaryTarget = hasToken ? (user?.isSetupComplete ? '/dashboard' : '/setup') : null
+  const secondaryTarget = hasToken ? '/resources' : null
+
+  const handleBeginSignIn = async () => {
+    try {
+      await dracoApi.auth.beginWorkOsSignIn()
+    } catch (error) {
+      console.error('Failed to start WorkOS sign-in:', error)
+    }
+  }
 
   return (
     <main className="animate-fade-in">
@@ -30,12 +38,25 @@ function Index() {
       </p>
       
       <div style={{ display: 'flex', gap: '1rem' }}>
-        <Link to={primaryTarget} className="btn-primary" style={{ textDecoration: 'none' }}>
-          {hasToken ? (user?.isSetupComplete ? 'Open Dashboard' : 'Continue Setup') : 'Initialize Sentinel'}
-        </Link>
-        <Link to={secondaryTarget} className="btn-secondary" style={{ textDecoration: 'none' }}>
-          {hasToken ? 'Browse Resources' : 'Sign In'}
-        </Link>
+        {hasToken ? (
+          <>
+            <Link to={primaryTarget!} className="btn-primary" style={{ textDecoration: 'none' }}>
+              {user?.isSetupComplete ? 'Open Dashboard' : 'Continue Setup'}
+            </Link>
+            <Link to={secondaryTarget!} className="btn-secondary" style={{ textDecoration: 'none' }}>
+              Browse Resources
+            </Link>
+          </>
+        ) : (
+          <>
+            <button className="btn-primary" onClick={() => void handleBeginSignIn()}>
+              Initialize Sentinel
+            </button>
+            <button className="btn-secondary" onClick={() => void handleBeginSignIn()}>
+              Sign In
+            </button>
+          </>
+        )}
       </div>
 
       <section className="grid grid-cols-3" style={{ marginTop: '8rem' }}>

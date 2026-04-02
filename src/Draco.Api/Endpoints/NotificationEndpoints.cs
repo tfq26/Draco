@@ -1,4 +1,6 @@
 using System.Security.Claims;
+using Draco.Application.Interfaces;
+using Draco.Application.Models;
 using Draco.Domain.Entities;
 using Draco.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
@@ -15,6 +17,12 @@ public static class NotificationEndpoints
         group.MapGet("/", GetNotificationsAsync)
             .WithName("GetNotifications");
 
+        group.MapGet("/preferences", GetNotificationPreferencesAsync)
+            .WithName("GetNotificationPreferences");
+
+        group.MapPatch("/preferences", UpdateNotificationPreferencesAsync)
+            .WithName("UpdateNotificationPreferences");
+
         group.MapPatch("/{id}/read", MarkAsReadAsync)
             .WithName("MarkAsRead");
 
@@ -23,6 +31,55 @@ public static class NotificationEndpoints
             
         group.MapPost("/test", CreateTestNotificationAsync)
             .WithName("CreateTestNotification");
+    }
+
+    private static async Task<IResult> GetNotificationPreferencesAsync(
+        DracoDbContext dbContext,
+        ClaimsPrincipal userPrincipal,
+        CancellationToken cancellationToken)
+    {
+        var userAccount = await userPrincipal.GetCurrentUserAsync(dbContext, cancellationToken);
+        if (userAccount is null) return Results.Unauthorized();
+
+        return Results.Ok(NotificationDeliveryPreferencesSerializer.Resolve(userAccount));
+    }
+
+    private static async Task<IResult> UpdateNotificationPreferencesAsync(
+        UpdateNotificationPreferencesRequest request,
+        DracoDbContext dbContext,
+        ClaimsPrincipal userPrincipal,
+        CancellationToken cancellationToken)
+    {
+        var userAccount = await userPrincipal.GetCurrentUserAsync(dbContext, cancellationToken);
+        if (userAccount is null) return Results.Unauthorized();
+
+        var preferences = new NotificationDeliveryPreferences
+        {
+            BrowserEnabled = request.BrowserEnabled,
+            EmailEnabled = request.EmailEnabled,
+            EmailAddress = NormalizeValue(request.EmailAddress),
+            MessagesEnabled = request.MessagesEnabled,
+            MessagesNumber = NormalizeValue(request.MessagesNumber),
+            WhatsAppEnabled = request.WhatsAppEnabled,
+            WhatsAppNumber = NormalizeValue(request.WhatsAppNumber)
+        };
+
+        userAccount.NotificationPreferencesJson = NotificationDeliveryPreferencesSerializer.Serialize(preferences);
+
+        var primaryPhone = preferences.MessagesNumber ?? preferences.WhatsAppNumber;
+        if (!string.IsNullOrWhiteSpace(primaryPhone))
+        {
+            userAccount.Phone = primaryPhone;
+        }
+
+        userAccount.PreferredChannel =
+            preferences.MessagesEnabled ? NotificationChannelNames.Messages :
+            preferences.WhatsAppEnabled ? NotificationChannelNames.WhatsApp :
+            preferences.EmailEnabled ? NotificationChannelNames.Email :
+            NotificationChannelNames.Browser;
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return Results.Ok(preferences);
     }
 
     private static async Task<IResult> GetNotificationsAsync(
@@ -84,6 +141,7 @@ public static class NotificationEndpoints
 
     private static async Task<IResult> CreateTestNotificationAsync(
         DracoDbContext dbContext,
+        INotificationDeliveryService notificationDeliveryService,
         ClaimsPrincipal userPrincipal,
         CancellationToken cancellationToken)
     {
@@ -106,9 +164,13 @@ public static class NotificationEndpoints
 
         dbContext.SystemNotifications.Add(notification);
         await dbContext.SaveChangesAsync(cancellationToken);
+        await notificationDeliveryService.DeliverAsync(userAccount, notification, cancellationToken);
 
         return Results.Ok(ToNotificationDto(notification));
     }
+
+    private static string? NormalizeValue(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private static object ToNotificationDto(SystemNotification notification) => new
     {
@@ -132,3 +194,12 @@ public static class NotificationEndpoints
         notification.Metadata
     };
 }
+
+public sealed record UpdateNotificationPreferencesRequest(
+    bool BrowserEnabled,
+    bool EmailEnabled,
+    string? EmailAddress,
+    bool MessagesEnabled,
+    string? MessagesNumber,
+    bool WhatsAppEnabled,
+    string? WhatsAppNumber);

@@ -2,8 +2,8 @@ import { createRoute, useNavigate } from '@tanstack/react-router'
 import { Route as rootRoute } from './__root'
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { User, Bell, Key, Lock, Plus, Loader2, AlertCircle, CheckCircle2, RefreshCcw, Unplug, ShieldCheck, Info, Mail, Trash2 } from 'lucide-react'
-import { API_BASE_URL, dracoApi, type AzureSubscriptionOption, type CloudConnection } from '../lib/api'
+import { User, Bell, Key, Lock, Plus, Loader2, AlertCircle, CheckCircle2, RefreshCcw, Unplug, ShieldCheck, Info, Mail, MessageSquare, Send } from 'lucide-react'
+import { API_BASE_URL, dracoApi, type AzureSubscriptionOption, type CloudConnection, type NotificationDeliveryPreferences } from '../lib/api'
 import { copyToClipboard, getAwsBootstrapErrorMessage } from '../lib/awsOnboarding'
 import azureLogo from '../assets/azure-logo.svg'
 import awsLogo from '../assets/aws-logo.svg'
@@ -32,6 +32,16 @@ const PROVIDERS = [
   { id: 'AWS', name: 'AWS', description: 'Add another AWS account or environment.', logo: awsLogo },
 ]
 
+const DEFAULT_NOTIFICATION_PREFERENCES: NotificationDeliveryPreferences = {
+  browserEnabled: true,
+  emailEnabled: false,
+  emailAddress: '',
+  messagesEnabled: false,
+  messagesNumber: '',
+  whatsAppEnabled: false,
+  whatsAppNumber: '',
+}
+
 function Settings() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -54,8 +64,7 @@ function Settings() {
   const [awsSessionToken, setAwsSessionToken] = useState('')
   const [copiedAwsValue, setCopiedAwsValue] = useState<string | null>(null)
   const [isAwsAccountDrawerOpen, setIsAwsAccountDrawerOpen] = useState(false)
-  const [notificationEmails, setNotificationEmails] = useState<string[]>([])
-  const [newEmail, setNewEmail] = useState('')
+  const [notificationPreferences, setNotificationPreferences] = useState<NotificationDeliveryPreferences>(DEFAULT_NOTIFICATION_PREFERENCES)
   const [azureSubscriptions, setAzureSubscriptions] = useState<AzureSubscriptionOption[]>([])
   const [selectedAzureSubscriptionId, setSelectedAzureSubscriptionId] = useState('')
   const [azureTokenBundle, setAzureTokenBundle] = useState<{
@@ -198,6 +207,18 @@ function Settings() {
     onSuccess: refreshViews,
   })
 
+  const saveNotificationPreferencesMutation = useMutation({
+    mutationFn: () => dracoApi.notifications.updatePreferences(notificationPreferences),
+    onSuccess: async (preferences) => {
+      setNotificationPreferences(preferences)
+      await refreshViews()
+    },
+  })
+
+  const sendTestNotificationMutation = useMutation({
+    mutationFn: () => dracoApi.notifications.createTest(),
+  })
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const code = params.get('code')
@@ -243,10 +264,21 @@ function Settings() {
   }, [])
 
   useEffect(() => {
-    if (user?.email && notificationEmails.length === 0) {
-      setNotificationEmails([user.email])
+    if (!user) {
+      return
     }
-  }, [user?.email])
+
+    const resolvedPreferences = user.notificationPreferences ?? DEFAULT_NOTIFICATION_PREFERENCES
+    setNotificationPreferences({
+      browserEnabled: resolvedPreferences.browserEnabled ?? true,
+      emailEnabled: resolvedPreferences.emailEnabled ?? false,
+      emailAddress: resolvedPreferences.emailAddress || user.email || '',
+      messagesEnabled: resolvedPreferences.messagesEnabled ?? false,
+      messagesNumber: resolvedPreferences.messagesNumber || user.phone || '',
+      whatsAppEnabled: resolvedPreferences.whatsAppEnabled ?? false,
+      whatsAppNumber: resolvedPreferences.whatsAppNumber || user.phone || '',
+    })
+  }, [user])
 
   useEffect(() => {
     setAwsRoleArn('')
@@ -414,62 +446,13 @@ function Settings() {
                 <div className="card" style={{ padding: '2.5rem' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
                     <Mail className="text-primary" size={20} />
-                    <h3 style={{ fontSize: '1.125rem', fontWeight: 800 }}>Notification Recipients</h3>
+                    <h3 style={{ fontSize: '1.125rem', fontWeight: 800 }}>Messaging Identity</h3>
                   </div>
-                  <p style={{ color: 'var(--muted-foreground)', fontSize: '0.875rem', marginBottom: '2rem' }}>
-                    Manage the target infrastructure fleet recipients for real-time drift alerts and executive summaries.
+                  <p style={{ color: 'var(--muted-foreground)', fontSize: '0.875rem', marginBottom: '1.5rem' }}>
+                    Draco now uses per-user delivery channels in the Notifications tab. Your account email remains the default email identity for summaries and alerts when email delivery is enabled.
                   </p>
-
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '2rem' }}>
-                    {notificationEmails.map((email, idx) => (
-                      <div key={idx} className="operational-surface" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.75rem 1.25rem' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                          <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: idx === 0 ? '#00ff00' : 'var(--muted)', opacity: 0.6 }} />
-                          <span style={{ fontSize: '0.9rem', fontWeight: 600 }}>{email}</span>
-                          {idx === 0 && <span className="micro-label" style={{ opacity: 0.5, fontSize: '0.6rem' }}>PRIMARY</span>}
-                        </div>
-                        {idx > 0 && (
-                          <button 
-                            onClick={() => setNotificationEmails(prev => prev.filter((_, i) => i !== idx))}
-                            style={{ color: 'var(--primary)', opacity: 0.6, cursor: 'pointer', transition: 'opacity 0.2s' }}
-                            onMouseOver={(e) => e.currentTarget.style.opacity = '1'}
-                            onMouseOut={(e) => e.currentTarget.style.opacity = '0.6'}
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-
-                  <div style={{ display: 'flex', gap: '0.75rem' }}>
-                    <input 
-                      type="email" 
-                      placeholder="Add recipient address..."
-                      className="operational-surface"
-                      style={{ flex: 1, padding: '0.75rem 1rem' }}
-                      value={newEmail}
-                      onChange={(e) => setNewEmail(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && newEmail.includes('@')) {
-                          setNotificationEmails(prev => [...prev, newEmail])
-                          setNewEmail('')
-                        }
-                      }}
-                    />
-                    <button 
-                      className="btn-primary" 
-                      onClick={() => {
-                        if (newEmail.includes('@')) {
-                          setNotificationEmails(prev => [...prev, newEmail])
-                          setNewEmail('')
-                        }
-                      }}
-                      disabled={!newEmail.includes('@')}
-                      style={{ padding: '0 1.5rem' }}
-                    >
-                      <Plus size={16} /> Add
-                    </button>
+                  <div className="operational-surface" style={{ padding: '1rem 1.25rem', fontSize: '0.95rem' }}>
+                    {user.email || 'No email address is currently available for this account.'}
                   </div>
                 </div>
               </div>
@@ -774,32 +757,156 @@ function Settings() {
             </TabsContent>
 
             <TabsContent value="notifications" className="animate-fade-in" style={{ marginTop: 0 }}>
-              <div className="card" style={{ padding: '2.5rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
-                  <Bell className="text-primary" size={24} />
-                  <h3 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Notification Center</h3>
-                </div>
-                <p style={{ color: 'var(--muted-foreground)', marginBottom: '2.5rem' }}>Configure real-time alerts and autonomous governance signals.</p>
-                
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.25rem', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)' }}>
-                    <div>
-                      <div style={{ fontWeight: 700 }}>Real-time Browser Alerts</div>
-                      <div style={{ fontSize: '0.8rem', color: 'var(--muted-foreground)' }}>Immediate popups for high-priority fleet events.</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                <div className="card" style={{ padding: '2.5rem' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
+                    <Bell className="text-primary" size={24} />
+                    <h3 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Notification Center</h3>
+                  </div>
+                  <p style={{ color: 'var(--muted-foreground)', marginBottom: '2.5rem' }}>
+                    Browser alerts stay on by default. Messages, email, and WhatsApp can be enabled per user and are sent from the same Draco notification pipeline.
+                  </p>
+
+                  <div style={{ display: 'grid', gap: '1rem' }}>
+                    <div className="operational-surface" style={{ padding: '1.25rem', display: 'grid', gap: '1rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem' }}>
+                        <div>
+                          <div style={{ fontWeight: 700 }}>Browser</div>
+                          <div style={{ fontSize: '0.8rem', color: 'var(--muted-foreground)' }}>In-app notifications and drawer updates.</div>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={notificationPreferences.browserEnabled}
+                          onChange={(event) => setNotificationPreferences((current) => ({ ...current, browserEnabled: event.target.checked }))}
+                        />
+                      </div>
                     </div>
-                    <div style={{ width: '44px', height: '24px', background: 'var(--primary)', borderRadius: '24px', position: 'relative', cursor: 'pointer' }}>
-                       <div style={{ position: 'absolute', right: '4px', top: '4px', width: '16px', height: '16px', borderRadius: '50%', background: 'white' }} />
+
+                    <div className="operational-surface" style={{ padding: '1.25rem', display: 'grid', gap: '1rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem' }}>
+                        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                          <MessageSquare size={18} className="text-primary" />
+                          <div>
+                            <div style={{ fontWeight: 700 }}>Messages</div>
+                            <div style={{ fontSize: '0.8rem', color: 'var(--muted-foreground)' }}>Primary mobile channel for immediate Draco alerts.</div>
+                          </div>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={notificationPreferences.messagesEnabled}
+                          onChange={(event) => setNotificationPreferences((current) => ({ ...current, messagesEnabled: event.target.checked }))}
+                        />
+                      </div>
+                      <div>
+                        <label className="micro-label" style={{ display: 'block', marginBottom: '0.5rem' }}>Mobile Number</label>
+                        <input
+                          value={notificationPreferences.messagesNumber || ''}
+                          onChange={(event) => setNotificationPreferences((current) => ({ ...current, messagesNumber: event.target.value }))}
+                          className="operational-surface"
+                          style={{ width: '100%', padding: '0.75rem 1rem' }}
+                          placeholder="+1 555 555 5555"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="operational-surface" style={{ padding: '1.25rem', display: 'grid', gap: '1rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem' }}>
+                        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                          <Mail size={18} className="text-primary" />
+                          <div>
+                            <div style={{ fontWeight: 700 }}>Email</div>
+                            <div style={{ fontSize: '0.8rem', color: 'var(--muted-foreground)' }}>Longer-form summaries and alert context.</div>
+                          </div>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={notificationPreferences.emailEnabled}
+                          onChange={(event) => setNotificationPreferences((current) => ({ ...current, emailEnabled: event.target.checked }))}
+                        />
+                      </div>
+                      <div>
+                        <label className="micro-label" style={{ display: 'block', marginBottom: '0.5rem' }}>Email Address</label>
+                        <input
+                          value={notificationPreferences.emailAddress || ''}
+                          onChange={(event) => setNotificationPreferences((current) => ({ ...current, emailAddress: event.target.value }))}
+                          className="operational-surface"
+                          style={{ width: '100%', padding: '0.75rem 1rem' }}
+                          placeholder={user.email || 'you@example.com'}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="operational-surface" style={{ padding: '1.25rem', display: 'grid', gap: '1rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem' }}>
+                        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                          <Send size={18} className="text-primary" />
+                          <div>
+                            <div style={{ fontWeight: 700 }}>WhatsApp</div>
+                            <div style={{ fontSize: '0.8rem', color: 'var(--muted-foreground)' }}>Template-friendly mobile delivery for follow-up expansion.</div>
+                          </div>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={notificationPreferences.whatsAppEnabled}
+                          onChange={(event) => setNotificationPreferences((current) => ({ ...current, whatsAppEnabled: event.target.checked }))}
+                        />
+                      </div>
+                      <div>
+                        <label className="micro-label" style={{ display: 'block', marginBottom: '0.5rem' }}>WhatsApp Number</label>
+                        <input
+                          value={notificationPreferences.whatsAppNumber || ''}
+                          onChange={(event) => setNotificationPreferences((current) => ({ ...current, whatsAppNumber: event.target.value }))}
+                          className="operational-surface"
+                          style={{ width: '100%', padding: '0.75rem 1rem' }}
+                          placeholder="+1 555 555 5555"
+                        />
+                      </div>
                     </div>
                   </div>
-                  
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1.25rem', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', opacity: 0.6 }}>
-                    <div>
-                      <div style={{ fontWeight: 700 }}>Telegram Ingestion (Beta)</div>
-                      <div style={{ fontSize: '0.8rem', color: 'var(--muted-foreground)' }}>Stream governance signals directly to your mobile device.</div>
-                    </div>
-                    <button className="btn-secondary" style={{ fontSize: '0.75rem' }}>Connect</button>
+                </div>
+
+                <div className="card" style={{ padding: '1.5rem', display: 'flex', flexWrap: 'wrap', gap: '0.75rem', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <div style={{ fontWeight: 700 }}>Channel Actions</div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--muted-foreground)' }}>Save your delivery config, then send a live test using the current settings.</div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                    <button
+                      className="btn-secondary"
+                      type="button"
+                      onClick={() => void sendTestNotificationMutation.mutateAsync()}
+                      disabled={sendTestNotificationMutation.isPending}
+                    >
+                      {sendTestNotificationMutation.isPending ? 'Sending Test...' : 'Send Test Notification'}
+                    </button>
+                    <button
+                      className="btn-primary"
+                      type="button"
+                      onClick={() => void saveNotificationPreferencesMutation.mutateAsync()}
+                      disabled={saveNotificationPreferencesMutation.isPending}
+                    >
+                      {saveNotificationPreferencesMutation.isPending ? 'Saving...' : 'Save Preferences'}
+                    </button>
                   </div>
                 </div>
+
+                {(saveNotificationPreferencesMutation.isError || sendTestNotificationMutation.isError) && (
+                  <div style={{ color: 'var(--primary)', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <AlertCircle size={16} />
+                    {(saveNotificationPreferencesMutation.error as Error | null)?.message
+                      || (sendTestNotificationMutation.error as Error | null)?.message
+                      || 'Notification settings could not be updated.'}
+                  </div>
+                )}
+
+                {(saveNotificationPreferencesMutation.isSuccess || sendTestNotificationMutation.isSuccess) && (
+                  <div style={{ color: '#00c27a', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <CheckCircle2 size={16} />
+                    {saveNotificationPreferencesMutation.isSuccess
+                      ? 'Notification delivery preferences saved.'
+                      : 'Test notification created and routed through enabled channels.'}
+                  </div>
+                )}
               </div>
             </TabsContent>
           </div>

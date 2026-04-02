@@ -41,6 +41,15 @@ Ensure you have a **Neon PostgreSQL** instance available and set:
 
 The active app does not require Neon Auth.
 
+For Twilio-backed outbound messaging, also set:
+
+- `TWILIO_ACCOUNT_SID`
+- `TWILIO_AUTH_TOKEN`
+- `TWILIO_SMS_FROM_NUMBER`
+- `TWILIO_WHATSAPP_FROM_NUMBER` (optional)
+- `SENDGRID_API_KEY`
+- `SENDGRID_FROM_EMAIL`
+
 ### 3. Launch the App
 ```bash
 bun start-sentinel.js

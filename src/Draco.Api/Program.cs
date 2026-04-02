@@ -44,8 +44,9 @@ builder.Services.AddHttpClient<IAIService, GeminiAIService>();
 builder.Services.AddScoped<IResourceRepository, ResourceRepository>();
 builder.Services.AddScoped<ICloudProvider, AzureProvider>();
 builder.Services.AddScoped<ICloudProvider, AWSProvider>();
-builder.Services.AddScoped<IMessagingService, AzureMessagingService>();
+builder.Services.AddScoped<IMessagingService, TwilioMessagingService>();
 builder.Services.AddScoped<IEmailService, SendGridService>();
+builder.Services.AddScoped<INotificationDeliveryService, NotificationDeliveryService>();
 builder.Services.AddScoped<IGitProvider, GitHubProvider>();
 builder.Services.AddScoped<AlertOrchestrator>();
 builder.Services.AddScoped<ResourceDiscoveryService>();
@@ -107,6 +108,7 @@ app.MapResourceEndpoints();
 app.MapTelemetryEndpoints();
 app.MapDashboardEndpoints();
 app.MapEventWorkflowEndpoints();
+app.MapMessagingWebhookEndpoints();
 app.MapNotificationEndpoints();
 
 app.Run();
@@ -140,6 +142,9 @@ static async Task EnsureCloudConnectionSchemaCompatibilityAsync(DracoDbContext d
 
         ALTER TABLE "CloudConnections"
         ADD COLUMN IF NOT EXISTS "AwsRoleArn" text;
+
+        ALTER TABLE "UserAccounts"
+        ADD COLUMN IF NOT EXISTS "NotificationPreferencesJson" text;
         """;
 
     try
