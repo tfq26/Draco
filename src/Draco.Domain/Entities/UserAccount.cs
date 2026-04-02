@@ -10,7 +10,8 @@ public class UserAccount
     public string Name { get; set; } = string.Empty;
     public string? Email { get; set; }
     public string? ImageUrl { get; set; }
-    public string? PreferredChannel { get; set; } = "SMS"; // "SMS" or "WhatsApp"
+    public string? PreferredChannel { get; set; } = "Messages";
+    public string? NotificationPreferencesJson { get; set; }
     public string? AuthId { get; set; }
     public string? PasswordHash { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;

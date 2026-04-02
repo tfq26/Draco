@@ -2,6 +2,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text.Json.Serialization;
+using Draco.Application.Models;
 using Draco.Domain.Entities;
 using Draco.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
@@ -103,7 +104,7 @@ public static class AuthEndpoints
                 ImageUrl = workOsUser.profile_picture_url,
                 CreatedAt = DateTimeOffset.UtcNow,
                 LastSeenAt = DateTimeOffset.UtcNow,
-                PreferredChannel = "SMS"
+                PreferredChannel = NotificationChannelNames.Messages
             };
             dbContext.UserAccounts.Add(account);
         }
@@ -154,7 +155,7 @@ public static class AuthEndpoints
                 ImageUrl = request.ImageUrl,
                 CreatedAt = DateTimeOffset.UtcNow,
                 LastSeenAt = DateTimeOffset.UtcNow,
-                PreferredChannel = "SMS"
+                PreferredChannel = NotificationChannelNames.Messages
             };
 
             dbContext.UserAccounts.Add(account);
@@ -284,6 +285,7 @@ public static class AuthEndpoints
         phone = account.Phone,
         imageUrl = account.ImageUrl,
         preferredChannel = account.PreferredChannel,
+        notificationPreferences = NotificationDeliveryPreferencesSerializer.Resolve(account),
         isSetupComplete = account.Connections.Any(),
         connections = account.Connections
             .OrderByDescending(connection => connection.LastSyncedAt ?? connection.ConnectedAt)

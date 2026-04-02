@@ -33,9 +33,20 @@ export interface DracoUser {
   phone?: string
   imageUrl?: string
   preferredChannel?: string
+  notificationPreferences?: NotificationDeliveryPreferences
   isSetupComplete: boolean
   connections: CloudConnection[]
   schedules?: unknown[]
+}
+
+export interface NotificationDeliveryPreferences {
+  browserEnabled: boolean
+  emailEnabled: boolean
+  emailAddress?: string
+  messagesEnabled: boolean
+  messagesNumber?: string
+  whatsAppEnabled: boolean
+  whatsAppNumber?: string
 }
 
 export interface CloudConnection {
@@ -514,7 +525,7 @@ async function fetchWithAuth<T>(endpoint: string, options: RequestInit = {}): Pr
 
   if (response.status === 401) {
     clearToken()
-    window.location.href = '/login'
+    window.location.href = '/'
     throw new Error('Unauthorized')
   }
 
@@ -603,6 +614,12 @@ export const dracoApi = {
   },
   notifications: {
     getAll: () => fetchWithAuth<any[]>('/api/notifications'),
+    getPreferences: () => fetchWithAuth<NotificationDeliveryPreferences>('/api/notifications/preferences'),
+    updatePreferences: (data: NotificationDeliveryPreferences) =>
+      fetchWithAuth<NotificationDeliveryPreferences>('/api/notifications/preferences', {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      }),
     markAsRead: (id: number) => fetchWithAuth(`/api/notifications/${id}/read`, { method: 'PATCH' }),
     clearAll: () => fetchWithAuth('/api/notifications/clear-all', { method: 'POST' }),
     createTest: () => fetchWithAuth('/api/notifications/test', { method: 'POST' }),

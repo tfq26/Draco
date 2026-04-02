@@ -6,7 +6,6 @@ using Draco.Infrastructure.Data;
 using Draco.Infrastructure.Providers;
 using Draco.Infrastructure.Repositories;
 using Draco.Infrastructure.Services;
-using Draco.Cli;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -32,19 +31,8 @@ var rootCommand = new RootCommand("Draco: Autonomous Cloud Governance Sentinel")
 var startCommand = new Command("start", "Starts the Draco sentinel monitoring loop");
 startCommand.SetHandler(async () =>
 {
-    var logger = serviceProvider.GetRequiredService<ILogger<Program>>();
     var discoveryService = serviceProvider.GetRequiredService<ResourceDiscoveryService>();
-    var remediationService = serviceProvider.GetRequiredService<RemediationService>();
     var cts = new CancellationTokenSource();
-    // Start Webhook Listener in background
-    var webhookLogger = serviceProvider.GetRequiredService<ILogger<TelnyxWebhookListener>>();
-    var webhookListener = new TelnyxWebhookListener(5050, async msg => {
-        AnsiConsole.MarkupLine($"[bold yellow]Incoming Command:[/] {msg}");
-        // Here you would hook into RemediationService or similar
-    }, webhookLogger);
-    
-    _ = webhookListener.StartAsync(cts.Token);
-    AnsiConsole.MarkupLine("[bold blue]Webhook Listener initialized[/] on port 5050.");
 
     AnsiConsole.Write(new FigletText("Draco").Color(Color.Blue));
     using (var scope = serviceProvider.CreateScope())
@@ -290,7 +278,7 @@ statusCommand.SetHandler(() =>
     table.AddColumn("Status");
     table.AddRow("Azure Provider", "[green]Online[/]");
     table.AddRow("AWS Provider", "[green]Online[/]");
-    table.AddRow("Azure Messaging Gateway", "[green]Active[/]");
+    table.AddRow("Twilio Messaging Gateway", "[green]Active[/]");
     table.AddRow("Gemini AI Core", "[green]Ready[/]");
     AnsiConsole.Write(table);
 });
@@ -348,7 +336,7 @@ void ConfigureServices(IServiceCollection services, IConfiguration configuration
     services.AddScoped<IResourceRepository, ResourceRepository>();
     services.AddScoped<ICloudProvider, AzureProvider>();
     services.AddScoped<ICloudProvider, AWSProvider>();
-    services.AddScoped<IMessagingService, AzureMessagingService>();
+    services.AddScoped<IMessagingService, TwilioMessagingService>();
     services.AddScoped<IEmailService, SendGridService>();
     services.AddScoped<IGitProvider, GitHubProvider>();
     services.AddScoped<AlertOrchestrator>();

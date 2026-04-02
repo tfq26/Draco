@@ -134,10 +134,10 @@ export function CallbackPage() {
               className="btn-secondary"
               onClick={() => {
                 dracoApi.auth.clearWorkOsCodeVerifier()
-                void navigate({ to: '/login' })
+                void navigate({ to: '/' })
               }}
             >
-              Back to Login
+              Back Home
             </button>
           </div>
         )}

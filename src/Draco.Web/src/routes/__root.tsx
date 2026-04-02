@@ -39,7 +39,7 @@ function RootComponent() {
   }, [theme])
 
   useEffect(() => {
-    const publicPaths = ['/', '/login', '/auth/callback', '/callback', '/aws-onboarding']
+    const publicPaths = ['/', '/auth/callback', '/callback', '/aws-onboarding']
     if (!hasToken && !publicPaths.includes(location.pathname)) {
       void navigate({ to: '/' })
     }
@@ -57,7 +57,15 @@ function RootComponent() {
     dracoApi.auth.clearToken()
     dracoApi.auth.clearWorkOsCodeVerifier()
     await queryClient.invalidateQueries({ queryKey: ['me'] })
-    window.location.href = '/login'
+    window.location.href = '/'
+  }
+
+  const handleBeginSignIn = async () => {
+    try {
+      await dracoApi.auth.beginWorkOsSignIn()
+    } catch (error) {
+      console.error('Failed to start WorkOS sign-in:', error)
+    }
   }
 
   const syncMutation = useMutation({
@@ -249,9 +257,13 @@ function RootComponent() {
                 )}
               </div>
             ) : (
-              <Link to="/login" className="btn-secondary" style={{ padding: '0.25rem 0.75rem', height: '32px', fontSize: '0.75rem', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}>
+              <button
+                onClick={() => void handleBeginSignIn()}
+                className="btn-secondary"
+                style={{ padding: '0.25rem 0.75rem', height: '32px', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center' }}
+              >
                 Sign In
-              </Link>
+              </button>
             )}
           </div>
         </nav>
