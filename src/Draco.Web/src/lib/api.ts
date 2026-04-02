@@ -33,7 +33,12 @@ export interface DracoUser {
   phone?: string
   imageUrl?: string
   preferredChannel?: string
+<<<<<<< HEAD
   notificationPreferences?: NotificationDeliveryPreferences
+=======
+  smsRecipients?: string[]
+  whatsAppRecipients?: string[]
+>>>>>>> c4bc3d5 (Add multi-recipient Twilio delivery for SMS and WhatsApp)
   isSetupComplete: boolean
   connections: CloudConnection[]
   schedules?: unknown[]
@@ -635,6 +640,28 @@ export const dracoApi = {
         body: JSON.stringify({ code, codeVerifier }),
       }),
     getMe: () => fetchWithAuth<DracoUser>('/api/auth/me'),
+    completeSetup: (data: {
+      phone?: string
+      name?: string
+      preferredChannel?: string
+      smsRecipients?: string[]
+      whatsAppRecipients?: string[]
+      connections?: Array<{
+        provider: string
+        subscriptionId: string
+        displayName?: string
+        authType?: string
+        externalAccountId?: string
+        awsRoleArn?: string
+        accessToken?: string
+        refreshToken?: string
+        tokenExpiresAt?: string
+      }>
+    }) =>
+      fetchWithAuth<{ message: string; user: DracoUser }>('/api/auth/setup-complete', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
   },
   cloudConnections: {
     list: () => fetchWithAuth<CloudConnection[]>('/api/cloud-connections'),

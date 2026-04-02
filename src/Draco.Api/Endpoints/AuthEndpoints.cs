@@ -1,6 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Net.Http.Json;
 using System.Security.Claims;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Draco.Application.Models;
 using Draco.Domain.Entities;
@@ -211,6 +212,15 @@ public static class AuthEndpoints
         account.PreferredChannel = string.IsNullOrWhiteSpace(request.PreferredChannel)
             ? account.PreferredChannel
             : request.PreferredChannel.Trim();
+        if (request.SmsRecipients is not null)
+        {
+            account.SmsRecipientsJson = SerializeRecipients(request.SmsRecipients);
+        }
+
+        if (request.WhatsAppRecipients is not null)
+        {
+            account.WhatsAppRecipientsJson = SerializeRecipients(request.WhatsAppRecipients);
+        }
         account.LastSeenAt = DateTimeOffset.UtcNow;
 
         foreach (var connection in request.Connections ?? [])
@@ -285,7 +295,12 @@ public static class AuthEndpoints
         phone = account.Phone,
         imageUrl = account.ImageUrl,
         preferredChannel = account.PreferredChannel,
+<<<<<<< HEAD
         notificationPreferences = NotificationDeliveryPreferencesSerializer.Resolve(account),
+=======
+        smsRecipients = ParseRecipients(account.SmsRecipientsJson, account.Phone),
+        whatsAppRecipients = ParseRecipients(account.WhatsAppRecipientsJson),
+>>>>>>> c4bc3d5 (Add multi-recipient Twilio delivery for SMS and WhatsApp)
         isSetupComplete = account.Connections.Any(),
         connections = account.Connections
             .OrderByDescending(connection => connection.LastSyncedAt ?? connection.ConnectedAt)
@@ -317,6 +332,48 @@ public static class AuthEndpoints
                 isActive = schedule.IsActive
             })
     };
+
+    private static string? SerializeRecipients(IEnumerable<string> recipients)
+    {
+        var normalizedRecipients = recipients
+            .Select(recipient => recipient.Trim())
+            .Where(recipient => !string.IsNullOrWhiteSpace(recipient))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return normalizedRecipients.Length == 0
+            ? null
+            : JsonSerializer.Serialize(normalizedRecipients);
+    }
+
+    private static string[] ParseRecipients(string? recipientsJson, string? fallbackRecipient = null)
+    {
+        try
+        {
+            var parsedRecipients = string.IsNullOrWhiteSpace(recipientsJson)
+                ? Array.Empty<string>()
+                : JsonSerializer.Deserialize<string[]>(recipientsJson) ?? Array.Empty<string>();
+
+            var normalizedRecipients = parsedRecipients
+                .Select(recipient => recipient.Trim())
+                .Where(recipient => !string.IsNullOrWhiteSpace(recipient))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (normalizedRecipients.Count == 0 && !string.IsNullOrWhiteSpace(fallbackRecipient))
+            {
+                normalizedRecipients.Add(fallbackRecipient.Trim());
+            }
+
+            return normalizedRecipients.ToArray();
+        }
+        catch
+        {
+            return string.IsNullOrWhiteSpace(fallbackRecipient)
+                ? Array.Empty<string>()
+                : new[] { fallbackRecipient.Trim() };
+        }
+    }
 
     private static string GenerateJwtForUser(UserAccount user, IConfiguration configuration)
     {
@@ -373,6 +430,8 @@ public sealed record SetupCompleteRequest(
     string? Phone,
     string? Name,
     string? PreferredChannel,
+    string[]? SmsRecipients,
+    string[]? WhatsAppRecipients,
     List<SetupCloudConnectionRequest>? Connections);
 
 public sealed record SetupCloudConnectionRequest(

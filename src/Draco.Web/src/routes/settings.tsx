@@ -2,8 +2,13 @@ import { createRoute, useNavigate } from '@tanstack/react-router'
 import { Route as rootRoute } from './__root'
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+<<<<<<< HEAD
 import { User, Bell, Key, Lock, Plus, Loader2, AlertCircle, CheckCircle2, RefreshCcw, Unplug, ShieldCheck, Info, Mail, MessageSquare, Send } from 'lucide-react'
 import { API_BASE_URL, dracoApi, type AzureSubscriptionOption, type CloudConnection, type NotificationDeliveryPreferences } from '../lib/api'
+=======
+import { User, Bell, Key, Lock, Plus, Loader2, AlertCircle, CheckCircle2, RefreshCcw, Unplug, ShieldCheck, Info, Mail, Trash2, Smartphone, MessageSquare, Send, X, Check } from 'lucide-react'
+import { API_BASE_URL, dracoApi, type AzureSubscriptionOption, type CloudConnection } from '../lib/api'
+>>>>>>> c4bc3d5 (Add multi-recipient Twilio delivery for SMS and WhatsApp)
 import { copyToClipboard, getAwsBootstrapErrorMessage } from '../lib/awsOnboarding'
 import azureLogo from '../assets/azure-logo.svg'
 import awsLogo from '../assets/aws-logo.svg'
@@ -64,7 +69,15 @@ function Settings() {
   const [awsSessionToken, setAwsSessionToken] = useState('')
   const [copiedAwsValue, setCopiedAwsValue] = useState<string | null>(null)
   const [isAwsAccountDrawerOpen, setIsAwsAccountDrawerOpen] = useState(false)
+<<<<<<< HEAD
   const [notificationPreferences, setNotificationPreferences] = useState<NotificationDeliveryPreferences>(DEFAULT_NOTIFICATION_PREFERENCES)
+=======
+  const [notificationEmails, setNotificationEmails] = useState<string[]>([])
+  const [newEmail, setNewEmail] = useState('')
+  const [smsRecipients, setSmsRecipients] = useState<string[]>([])
+  const [whatsAppRecipients, setWhatsAppRecipients] = useState<string[]>([])
+  const [preferredChannels, setPreferredChannels] = useState<Array<'SMS' | 'WhatsApp'>>(['SMS'])
+>>>>>>> c4bc3d5 (Add multi-recipient Twilio delivery for SMS and WhatsApp)
   const [azureSubscriptions, setAzureSubscriptions] = useState<AzureSubscriptionOption[]>([])
   const [selectedAzureSubscriptionId, setSelectedAzureSubscriptionId] = useState('')
   const [azureTokenBundle, setAzureTokenBundle] = useState<{
@@ -281,6 +294,24 @@ function Settings() {
   }, [user])
 
   useEffect(() => {
+    setSmsRecipients(user?.smsRecipients ?? (user?.phone ? [user.phone] : []))
+    setWhatsAppRecipients(user?.whatsAppRecipients ?? [])
+    const parsedChannels = (user?.preferredChannel ?? 'SMS')
+      .split(',')
+      .map(channel => channel.trim().toLowerCase())
+
+    const nextChannels: Array<'SMS' | 'WhatsApp'> = []
+    if (parsedChannels.includes('sms') || parsedChannels.includes('messages')) {
+      nextChannels.push('SMS')
+    }
+    if (parsedChannels.includes('whatsapp')) {
+      nextChannels.push('WhatsApp')
+    }
+
+    setPreferredChannels(nextChannels.length > 0 ? nextChannels : ['SMS'])
+  }, [user?.phone, user?.preferredChannel])
+
+  useEffect(() => {
     setAwsRoleArn('')
   }, [subscriptionId, awsConnectionMode])
 
@@ -295,6 +326,36 @@ function Settings() {
       setCopiedAwsValue(null)
     }
   }
+
+  const togglePreferredChannel = (channel: 'SMS' | 'WhatsApp') => {
+    setPreferredChannels(current => {
+      if (current.includes(channel)) {
+        const next = current.filter(existingChannel => existingChannel !== channel)
+        return next.length > 0 ? next : current
+      }
+
+      return [...current, channel]
+    })
+  }
+
+  const saveNotificationSettingsMutation = useMutation({
+    mutationFn: async () =>
+      dracoApi.auth.completeSetup({
+        name: user?.name ?? '',
+        phone: smsRecipients[0] ?? user?.phone ?? '',
+        preferredChannel: preferredChannels.join(','),
+        smsRecipients,
+        whatsAppRecipients,
+        connections: [],
+      }),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['me'] })
+    },
+  })
+
+  const sendTestNotificationMutation = useMutation({
+    mutationFn: async () => dracoApi.notifications.createTest(),
+  })
 
   const handleAzureSignIn = async () => {
     try {
@@ -757,6 +818,7 @@ function Settings() {
             </TabsContent>
 
             <TabsContent value="notifications" className="animate-fade-in" style={{ marginTop: 0 }}>
+<<<<<<< HEAD
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                 <div className="card" style={{ padding: '2.5rem' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
@@ -887,6 +949,155 @@ function Settings() {
                     >
                       {saveNotificationPreferencesMutation.isPending ? 'Saving...' : 'Save Preferences'}
                     </button>
+=======
+              <div className="card" style={{ padding: '2.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
+                  <Bell className="text-primary" size={24} />
+                  <h3 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Notification Center</h3>
+                </div>
+                <p style={{ color: 'var(--muted-foreground)', marginBottom: '2.5rem' }}>Save the mobile number and channel Draco should use for live alerts and test messages.</p>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                  <div className="operational-surface" style={{ padding: '1.5rem', borderRadius: 'var(--radius-lg)', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                      <Smartphone size={18} className="text-primary" />
+                      <div style={{ fontWeight: 800 }}>Mobile Delivery Target</div>
+                    </div>
+
+                    <div>
+                      <label className="micro-label" style={{ display: 'block', marginBottom: '0.5rem' }}>Messages Recipients</label>
+                      <TagInput
+                        values={smsRecipients}
+                        onChange={setSmsRecipients}
+                        placeholder="Add a phone number"
+                      />
+                      <p style={{ fontSize: '0.75rem', color: 'var(--muted)', marginTop: '0.5rem' }}>
+                        Add one number at a time. Press `Enter` or comma to add each recipient.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="micro-label" style={{ display: 'block', marginBottom: '0.5rem' }}>WhatsApp Recipients</label>
+                      <TagInput
+                        values={whatsAppRecipients}
+                        onChange={setWhatsAppRecipients}
+                        placeholder="Add a WhatsApp number"
+                      />
+                      <p style={{ fontSize: '0.75rem', color: 'var(--muted)', marginTop: '0.5rem' }}>
+                        Use a separate list when WhatsApp should go to a different set of recipients.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="micro-label" style={{ display: 'block', marginBottom: '0.5rem' }}>Preferred Channel</label>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                        <button
+                          type="button"
+                          onClick={() => togglePreferredChannel('SMS')}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.75rem',
+                            background: 'transparent',
+                            border: 'none',
+                            padding: 0,
+                            cursor: 'pointer',
+                            color: 'var(--foreground)',
+                            width: 'fit-content',
+                          }}
+                        >
+                          <div style={{
+                            width: '1.15rem',
+                            height: '1.15rem',
+                            borderRadius: '6px',
+                            border: preferredChannels.includes('SMS') ? '1px solid rgba(255, 59, 48, 0.45)' : '1px solid var(--border)',
+                            background: preferredChannels.includes('SMS') ? 'rgba(255, 59, 48, 0.16)' : 'transparent',
+                            display: 'grid',
+                            placeItems: 'center',
+                            color: 'var(--primary)',
+                            flexShrink: 0,
+                          }}>
+                            {preferredChannels.includes('SMS') ? <Check size={12} /> : null}
+                          </div>
+                          <MessageSquare size={16} />
+                          <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>Messages</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => togglePreferredChannel('WhatsApp')}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.75rem',
+                            background: 'transparent',
+                            border: 'none',
+                            padding: 0,
+                            cursor: 'pointer',
+                            color: 'var(--foreground)',
+                            width: 'fit-content',
+                          }}
+                        >
+                          <div style={{
+                            width: '1.15rem',
+                            height: '1.15rem',
+                            borderRadius: '6px',
+                            border: preferredChannels.includes('WhatsApp') ? '1px solid rgba(37, 211, 102, 0.45)' : '1px solid var(--border)',
+                            background: preferredChannels.includes('WhatsApp') ? 'rgba(37, 211, 102, 0.16)' : 'transparent',
+                            display: 'grid',
+                            placeItems: 'center',
+                            color: '#25D366',
+                            flexShrink: 0,
+                          }}>
+                            {preferredChannels.includes('WhatsApp') ? <Check size={12} /> : null}
+                          </div>
+                          <Send size={16} />
+                          <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>WhatsApp</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                      <button
+                        className="btn-secondary"
+                        onClick={() => sendTestNotificationMutation.mutate()}
+                        disabled={sendTestNotificationMutation.isPending}
+                      >
+                        {sendTestNotificationMutation.isPending ? <Spinner size={16} /> : 'Send Test Notification'}
+                      </button>
+                      <button
+                        className="btn-primary"
+                        onClick={() => saveNotificationSettingsMutation.mutate()}
+                        disabled={saveNotificationSettingsMutation.isPending}
+                      >
+                        {saveNotificationSettingsMutation.isPending ? <Spinner size={16} /> : 'Save Preferences'}
+                      </button>
+                    </div>
+
+                    {saveNotificationSettingsMutation.isSuccess && (
+                      <div style={{ color: '#00c27a', fontSize: '0.875rem' }}>
+                        Delivery preferences saved to your account.
+                      </div>
+                    )}
+
+                    {saveNotificationSettingsMutation.isError && (
+                      <div style={{ color: 'var(--primary)', fontSize: '0.875rem' }}>
+                        {(saveNotificationSettingsMutation.error as Error).message}
+                      </div>
+                    )}
+
+                    {sendTestNotificationMutation.isSuccess && (
+                      <div style={{ color: '#00c27a', fontSize: '0.875rem' }}>
+                        {(sendTestNotificationMutation.data as { message?: string } | undefined)?.message ?? 'Test notification created.'}
+                      </div>
+                    )}
+
+                    {sendTestNotificationMutation.isError && (
+                      <div style={{ color: 'var(--primary)', fontSize: '0.875rem' }}>
+                        {(sendTestNotificationMutation.error as Error).message}
+                      </div>
+                    )}
+>>>>>>> c4bc3d5 (Add multi-recipient Twilio delivery for SMS and WhatsApp)
                   </div>
                 </div>
 
@@ -1056,6 +1267,114 @@ function Settings() {
           </DrawerFooter>
         </DrawerContent>
       </Drawer>
+    </div>
+  )
+}
+
+function TagInput({
+  values,
+  onChange,
+  placeholder,
+}: {
+  values: string[]
+  onChange: (values: string[]) => void
+  placeholder: string
+}) {
+  const [draft, setDraft] = useState('')
+
+  const commitDraft = () => {
+    const nextValue = draft.trim()
+    if (!nextValue) {
+      setDraft('')
+      return
+    }
+
+    if (!values.some(value => value.toLowerCase() === nextValue.toLowerCase())) {
+      onChange([...values, nextValue])
+    }
+
+    setDraft('')
+  }
+
+  const removeValue = (valueToRemove: string) => {
+    onChange(values.filter(value => value !== valueToRemove))
+  }
+
+  return (
+    <div
+      className="operational-surface"
+      style={{
+        width: '100%',
+        padding: '0.7rem',
+        minHeight: '3.5rem',
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: '0.55rem',
+        alignItems: 'center',
+      }}
+    >
+      {values.map(value => (
+        <span
+          key={value}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0.4rem',
+            padding: '0.45rem 0.7rem',
+            borderRadius: '999px',
+            background: 'rgba(255,255,255,0.06)',
+            border: '1px solid var(--border)',
+            fontSize: '0.82rem',
+            fontWeight: 600,
+          }}
+        >
+          <span>{value}</span>
+          <button
+            type="button"
+            onClick={() => removeValue(value)}
+            style={{
+              display: 'grid',
+              placeItems: 'center',
+              background: 'transparent',
+              border: 'none',
+              padding: 0,
+              cursor: 'pointer',
+              color: 'var(--muted-foreground)',
+            }}
+            aria-label={`Remove ${value}`}
+          >
+            <X size={14} />
+          </button>
+        </span>
+      ))}
+
+      <input
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ',') {
+            e.preventDefault()
+            commitDraft()
+            return
+          }
+
+          if (e.key === 'Backspace' && draft.length === 0 && values.length > 0) {
+            onChange(values.slice(0, -1))
+          }
+        }}
+        onBlur={commitDraft}
+        placeholder={values.length === 0 ? placeholder : 'Add another number'}
+        style={{
+          flex: 1,
+          minWidth: '10rem',
+          background: 'transparent',
+          border: 'none',
+          outline: 'none',
+          color: 'var(--foreground)',
+          padding: '0.35rem 0.2rem',
+          fontSize: '0.95rem',
+        }}
+      />
     </div>
   )
 }

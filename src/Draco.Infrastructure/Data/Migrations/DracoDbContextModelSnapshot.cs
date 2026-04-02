@@ -663,6 +663,12 @@ namespace Draco.Infrastructure.Data.Migrations
                     b.Property<string>("PreferredChannel")
                         .HasColumnType("text");
 
+                    b.Property<string>("SmsRecipientsJson")
+                        .HasColumnType("text");
+
+                    b.Property<string>("WhatsAppRecipientsJson")
+                        .HasColumnType("text");
+
                     b.HasKey("Id");
 
                     b.HasIndex("AuthId")

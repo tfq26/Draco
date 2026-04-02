@@ -10,8 +10,14 @@ public class UserAccount
     public string Name { get; set; } = string.Empty;
     public string? Email { get; set; }
     public string? ImageUrl { get; set; }
+<<<<<<< HEAD
     public string? PreferredChannel { get; set; } = "Messages";
     public string? NotificationPreferencesJson { get; set; }
+=======
+    public string? PreferredChannel { get; set; } = "SMS"; // Comma-separated: "SMS", "WhatsApp", or both
+    public string? SmsRecipientsJson { get; set; }
+    public string? WhatsAppRecipientsJson { get; set; }
+>>>>>>> c4bc3d5 (Add multi-recipient Twilio delivery for SMS and WhatsApp)
     public string? AuthId { get; set; }
     public string? PasswordHash { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;

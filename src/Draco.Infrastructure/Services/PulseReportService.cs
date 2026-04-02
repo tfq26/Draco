@@ -3,6 +3,7 @@ using Draco.Domain.Entities;
 using Draco.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using System.Text.Json;
 
 namespace Draco.Infrastructure.Services;
 
@@ -63,11 +64,98 @@ RESOURCES:
 
         // Send summary via email/SMS
         var account = await _dbContext.UserAccounts.FindAsync(new object[] { userId }, ct);
-        if (account != null && !string.IsNullOrEmpty(account.Phone))
+        if (account != null)
         {
+            var channels = ParsePreferredChannels(account.PreferredChannel);
+            var smsRecipients = ParseRecipients(account.SmsRecipientsJson, account.Phone);
+            var whatsAppRecipients = ParseRecipients(account.WhatsAppRecipientsJson);
+            if (smsRecipients.Count == 0 && whatsAppRecipients.Count == 0)
+            {
+                _logger.LogInformation("Skipping Pulse Report delivery for user {UserId} because no recipients are configured.", userId);
+                return;
+            }
+
             var message = $"🚀 Draco Pulse Summary:\n{summary.Substring(0, Math.Min(summary.Length, 1000))}";
-            await _messagingService.SendMessageAsync(account.Phone, message, ct);
-            _logger.LogInformation("Pulse Report sent to {Phone}", account.Phone);
+
+            if (channels.Contains("SMS"))
+            {
+                foreach (var recipient in smsRecipients)
+                {
+                    await _messagingService.SendMessageAsync(recipient, message, ct);
+                }
+            }
+
+            if (channels.Contains("WhatsApp"))
+            {
+                foreach (var recipient in whatsAppRecipients)
+                {
+                    await _messagingService.SendWhatsAppMessageAsync(recipient, message, ct);
+                }
+            }
+
+            _logger.LogInformation("Pulse Report sent through {Channels}", string.Join(", ", channels));
+        }
+    }
+
+    private static HashSet<string> ParsePreferredChannels(string? rawChannels)
+    {
+        var channels = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (string.IsNullOrWhiteSpace(rawChannels))
+        {
+            channels.Add("SMS");
+            return channels;
+        }
+
+        foreach (var channel in rawChannels.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (string.Equals(channel, "Messages", StringComparison.OrdinalIgnoreCase))
+            {
+                channels.Add("SMS");
+                continue;
+            }
+
+            if (string.Equals(channel, "SMS", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(channel, "WhatsApp", StringComparison.OrdinalIgnoreCase))
+            {
+                channels.Add(channel);
+            }
+        }
+
+        if (channels.Count == 0)
+        {
+            channels.Add("SMS");
+        }
+
+        return channels;
+    }
+
+    private static List<string> ParseRecipients(string? recipientsJson, string? fallbackRecipient = null)
+    {
+        try
+        {
+            var parsedRecipients = string.IsNullOrWhiteSpace(recipientsJson)
+                ? Array.Empty<string>()
+                : JsonSerializer.Deserialize<string[]>(recipientsJson) ?? Array.Empty<string>();
+
+            var normalizedRecipients = parsedRecipients
+                .Select(recipient => recipient.Trim())
+                .Where(recipient => !string.IsNullOrWhiteSpace(recipient))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (normalizedRecipients.Count == 0 && !string.IsNullOrWhiteSpace(fallbackRecipient))
+            {
+                normalizedRecipients.Add(fallbackRecipient.Trim());
+            }
+
+            return normalizedRecipients;
+        }
+        catch
+        {
+            return string.IsNullOrWhiteSpace(fallbackRecipient)
+                ? new List<string>()
+                : new List<string> { fallbackRecipient.Trim() };
         }
     }
 }
