@@ -153,12 +153,26 @@ public static class NotificationEndpoints
                 }
             }
 
-            deliveryMessage = deliveryAttempts.Count switch
+            if (deliveryAttempts.Count == 0)
             {
-                1 => $"Test notification saved and a {deliveryAttempts[0]} delivery was attempted.",
-                > 1 => $"Test notification saved and delivery was attempted through {string.Join(" and ", deliveryAttempts)}.",
-                _ => "Test notification saved, but the preferred channel is not configured for mobile delivery."
-            };
+                deliveryMessage = "Test notification saved, but the preferred channel is not configured for mobile delivery.";
+            }
+            else if (deliverySucceeded)
+            {
+                deliveryMessage = deliveryAttempts.Count switch
+                {
+                    1 => $"Test notification saved and delivered through {deliveryAttempts[0]}.",
+                    _ => $"Test notification saved and delivered through {string.Join(" and ", deliveryAttempts)}."
+                };
+            }
+            else
+            {
+                deliveryMessage = deliveryAttempts.Count switch
+                {
+                    1 => $"Test notification saved, but {deliveryAttempts[0]} delivery failed. Check Twilio configuration on the deployed API.",
+                    _ => $"Test notification saved, but delivery failed through {string.Join(" and ", deliveryAttempts)}. Check Twilio configuration on the deployed API."
+                };
+            }
         }
 
         if (deliverySucceeded)

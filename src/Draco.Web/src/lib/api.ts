@@ -21,6 +21,7 @@ function normalizeApiBaseUrl(value?: string) {
 
 export const API_BASE_URL = normalizeApiBaseUrl(import.meta.env.VITE_API_URL)
 const WORKOS_CLIENT_ID = import.meta.env.VITE_WORKOS_CLIENT_ID
+const WORKOS_REDIRECT_URI = import.meta.env.VITE_WORKOS_REDIRECT_URI?.trim()
 const WORKOS_AUTHORIZE_URL = 'https://api.workos.com/user_management/authorize'
 const WORKOS_CODE_VERIFIER_STORAGE_KEY = 'draco:workos:code-verifier'
 const AZURE_OAUTH_STATE_STORAGE_KEY = 'draco:azure:oauth-state'
@@ -546,7 +547,7 @@ async function beginWorkOsSignIn() {
 
   const codeVerifier = createCodeVerifier()
   const codeChallenge = await createCodeChallenge(codeVerifier)
-  const redirectUri = `${window.location.origin}/auth/callback`
+  const redirectUri = resolveWorkOsRedirectUri()
 
   sessionStorage.setItem(WORKOS_CODE_VERIFIER_STORAGE_KEY, codeVerifier)
 
@@ -560,6 +561,18 @@ async function beginWorkOsSignIn() {
   url.searchParams.set('code_challenge_method', 'S256')
 
   window.location.assign(url.toString())
+}
+
+function resolveWorkOsRedirectUri() {
+  if (!WORKOS_REDIRECT_URI) {
+    return `${window.location.origin}/auth/callback`
+  }
+
+  if (/^https?:\/\//i.test(WORKOS_REDIRECT_URI)) {
+    return WORKOS_REDIRECT_URI
+  }
+
+  return new URL(WORKOS_REDIRECT_URI, window.location.origin).toString()
 }
 
 async function beginAzureSignIn() {
@@ -612,7 +625,13 @@ async function fetchWithAuth<T>(endpoint: string, options: RequestInit = {}): Pr
             .join(' ')
         : undefined) ||
       'API request failed'
-    throw new Error(message)
+
+    const details =
+      typeof error.details === 'string' && error.details.trim().length > 0
+        ? error.details.trim()
+        : undefined
+
+    throw new Error(details && !message.includes(details) ? `${message} ${details}` : message)
   }
 
   if (response.status === 204) {
