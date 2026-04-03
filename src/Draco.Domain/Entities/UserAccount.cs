@@ -10,6 +10,7 @@ public class UserAccount
     public string Name { get; set; } = string.Empty;
     public string? Email { get; set; }
     public string? ImageUrl { get; set; }
+    public string? TimeZoneId { get; set; }
     public string? PreferredChannel { get; set; } = "SMS"; // Comma-separated: "SMS", "WhatsApp", or both
     public string? SmsRecipientsJson { get; set; }
     public string? WhatsAppRecipientsJson { get; set; }

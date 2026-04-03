@@ -124,7 +124,7 @@ async function start() {
                     if (json.tunnels && json.tunnels.length > 0) {
                         const url = json.tunnels[0].public_url;
                         console.log(`\n${colors.ngrok}==========================================${colors.reset}`);
-                        console.log(`${colors.ngrok} LIVE WEBHOOK URL: ${url}/api/webhook/vonage ${colors.reset}`);
+                        console.log(`${colors.ngrok} LIVE TWILIO WEBHOOK URL: ${url}/api/webhooks/twilio/messages ${colors.reset}`);
                         console.log(`${colors.ngrok}==========================================${colors.reset}\n`);
                     } else {
                         setTimeout(fetchUrl, 2000);

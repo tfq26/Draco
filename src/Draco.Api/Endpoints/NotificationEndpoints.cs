@@ -98,7 +98,7 @@ public static class NotificationEndpoints
             UserId = userAccount.Id,
             NotificationKey = $"manual:test:{Guid.NewGuid():N}",
             Title = "Test Notification",
-            Message = "This is a test notification generated at " + DateTime.UtcNow.ToString("f"),
+            Message = "This is a test notification generated at " + FormatUserLocalTimestamp(DateTimeOffset.UtcNow, userAccount.TimeZoneId),
             Type = "Info",
             Severity = "Info",
             CreatedAt = DateTime.UtcNow,
@@ -255,4 +255,22 @@ public static class NotificationEndpoints
         notification.SourceRule,
         notification.Metadata
     };
+
+    private static string FormatUserLocalTimestamp(DateTimeOffset timestamp, string? timeZoneId)
+    {
+        if (!string.IsNullOrWhiteSpace(timeZoneId))
+        {
+            try
+            {
+                var timeZone = TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
+                var localTime = TimeZoneInfo.ConvertTime(timestamp, timeZone);
+                return $"{localTime:dddd, MMMM d, yyyy h:mm tt} {timeZone.Id}";
+            }
+            catch
+            {
+            }
+        }
+
+        return $"{timestamp:dddd, MMMM d, yyyy h:mm tt} UTC";
+    }
 }

@@ -209,6 +209,7 @@ public static class AuthEndpoints
         }
 
         account.Phone = string.IsNullOrWhiteSpace(request.Phone) ? account.Phone : request.Phone.Trim();
+        account.TimeZoneId = NormalizeTimeZoneId(request.TimeZoneId) ?? account.TimeZoneId;
         account.PreferredChannel = string.IsNullOrWhiteSpace(request.PreferredChannel)
             ? account.PreferredChannel
             : request.PreferredChannel.Trim();
@@ -293,6 +294,7 @@ public static class AuthEndpoints
         name = account.Name,
         email = account.Email,
         phone = account.Phone,
+        timeZoneId = account.TimeZoneId,
         imageUrl = account.ImageUrl,
         preferredChannel = account.PreferredChannel,
         smsRecipients = ParseRecipients(account.SmsRecipientsJson, account.Phone),
@@ -340,6 +342,26 @@ public static class AuthEndpoints
         return normalizedRecipients.Length == 0
             ? null
             : JsonSerializer.Serialize(normalizedRecipients);
+    }
+
+    private static string? NormalizeTimeZoneId(string? timeZoneId)
+    {
+        if (string.IsNullOrWhiteSpace(timeZoneId))
+        {
+            return null;
+        }
+
+        var trimmed = timeZoneId.Trim();
+
+        try
+        {
+            _ = TimeZoneInfo.FindSystemTimeZoneById(trimmed);
+            return trimmed;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static string[] ParseRecipients(string? recipientsJson, string? fallbackRecipient = null)
@@ -425,6 +447,7 @@ public sealed record WorkOsSyncRequest(string WorkOsUserId, string Email, string
 public sealed record SetupCompleteRequest(
     string? Phone,
     string? Name,
+    string? TimeZoneId,
     string? PreferredChannel,
     string[]? SmsRecipients,
     string[]? WhatsAppRecipients,

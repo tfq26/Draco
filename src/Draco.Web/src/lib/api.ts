@@ -31,6 +31,7 @@ export interface DracoUser {
   name: string
   email?: string
   phone?: string
+  timeZoneId?: string
   imageUrl?: string
   preferredChannel?: string
   smsRecipients?: string[]
@@ -646,6 +647,7 @@ export const dracoApi = {
     completeSetup: (data: {
       phone?: string
       name?: string
+      timeZoneId?: string
       preferredChannel?: string
       smsRecipients?: string[]
       whatsAppRecipients?: string[]

@@ -154,6 +154,9 @@ static async Task EnsureCloudConnectionSchemaCompatibilityAsync(DracoDbContext d
         ALTER TABLE "UserAccounts"
         ADD COLUMN IF NOT EXISTS "WhatsAppRecipientsJson" text;
 
+        ALTER TABLE "UserAccounts"
+        ADD COLUMN IF NOT EXISTS "TimeZoneId" text;
+
         ALTER TABLE "SystemNotifications"
         ADD COLUMN IF NOT EXISTS "LastDeliveredAt" timestamp with time zone;
         """;

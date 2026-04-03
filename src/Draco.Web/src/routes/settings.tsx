@@ -293,6 +293,7 @@ function Settings() {
       dracoApi.auth.completeSetup({
         name: user?.name ?? '',
         phone: smsRecipients[0] ?? user?.phone ?? '',
+        timeZoneId: Intl.DateTimeFormat().resolvedOptions().timeZone,
         preferredChannel: preferredChannels.join(','),
         smsRecipients,
         whatsAppRecipients,

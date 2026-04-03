@@ -13,6 +13,12 @@ public static class MessagingWebhookEndpoints
     {
         app.MapPost("/api/webhooks/twilio/messages", HandleIncomingTwilioMessageAsync)
             .WithName("HandleIncomingTwilioMessage");
+
+        app.MapPost("/api/webhook/twilio/messages", HandleIncomingTwilioMessageAsync)
+            .WithName("HandleIncomingTwilioMessageLegacy");
+
+        app.MapPost("/api/webhook/vonage", HandleIncomingTwilioMessageAsync)
+            .WithName("HandleIncomingTwilioMessageVonageAlias");
     }
 
     private static async Task<IResult> HandleIncomingTwilioMessageAsync(
