@@ -1,5 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
+using Draco.Application.Interfaces;
 using Draco.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 
@@ -16,6 +18,7 @@ public static class MessagingWebhookEndpoints
     private static async Task<IResult> HandleIncomingTwilioMessageAsync(
         HttpRequest request,
         DracoDbContext dbContext,
+        IAutonomousInsightService autonomousInsightService,
         IConfiguration configuration,
         CancellationToken cancellationToken)
     {
@@ -49,15 +52,19 @@ public static class MessagingWebhookEndpoints
             return TwiML("Thanks, Draco received your message but it was empty.");
         }
 
-        var user = await dbContext.UserAccounts
-            .FirstOrDefaultAsync(account => account.Phone == from, cancellationToken);
+        var user = await ResolveUserAccountAsync(from, dbContext, cancellationToken);
 
         if (user is null)
         {
             return TwiML("We could not match this number to a Draco user yet.");
         }
 
-        var commandResult = await MessagingCommandProcessor.ProcessAsync(user.Id, body, dbContext, cancellationToken);
+        var commandResult = await MessagingCommandProcessor.ProcessAsync(
+            user.Id,
+            body,
+            dbContext,
+            autonomousInsightService,
+            cancellationToken);
 
         dbContext.WorkflowEvents.Add(new Draco.Domain.Entities.WorkflowEvent
         {
@@ -130,6 +137,75 @@ public static class MessagingWebhookEndpoints
 
     private static string BuildRawPayloadSnapshot(IFormCollection form) =>
         string.Join("&", form.Select(pair => $"{pair.Key}={pair.Value}"));
+
+    private static async Task<Draco.Domain.Entities.UserAccount?> ResolveUserAccountAsync(
+        string from,
+        DracoDbContext dbContext,
+        CancellationToken cancellationToken)
+    {
+        var accounts = await dbContext.UserAccounts
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+
+        return accounts.FirstOrDefault(account => InboundNumberMatches(account, from));
+    }
+
+    private static bool InboundNumberMatches(Draco.Domain.Entities.UserAccount account, string from)
+    {
+        var normalizedFrom = NormalizeComparablePhone(from);
+        if (string.IsNullOrWhiteSpace(normalizedFrom))
+        {
+            return false;
+        }
+
+        if (NormalizeComparablePhone(account.Phone) == normalizedFrom)
+        {
+            return true;
+        }
+
+        return DeserializeRecipients(account.SmsRecipientsJson)
+                   .Concat(DeserializeRecipients(account.WhatsAppRecipientsJson))
+                   .Any(recipient => NormalizeComparablePhone(recipient) == normalizedFrom);
+    }
+
+    private static IEnumerable<string> DeserializeRecipients(string? rawJson)
+    {
+        if (string.IsNullOrWhiteSpace(rawJson))
+        {
+            return [];
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<string[]>(rawJson) ?? [];
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    private static string? NormalizeComparablePhone(string? rawPhone)
+    {
+        if (string.IsNullOrWhiteSpace(rawPhone))
+        {
+            return null;
+        }
+
+        var trimmed = rawPhone.Trim();
+        if (trimmed.StartsWith("whatsapp:", StringComparison.OrdinalIgnoreCase))
+        {
+            trimmed = trimmed["whatsapp:".Length..];
+        }
+
+        var digits = new string(trimmed.Where(char.IsDigit).ToArray());
+        if (digits.Length == 10)
+        {
+            digits = $"1{digits}";
+        }
+
+        return digits.Length >= 11 ? digits : null;
+    }
 }
 
 internal static class MessagingCommandProcessor
@@ -138,6 +214,7 @@ internal static class MessagingCommandProcessor
         Guid userId,
         string messageBody,
         DracoDbContext dbContext,
+        IAutonomousInsightService autonomousInsightService,
         CancellationToken cancellationToken)
     {
         var parsed = Parse(messageBody);
@@ -147,7 +224,7 @@ internal static class MessagingCommandProcessor
             "status" => await HandleStatusAsync(userId, dbContext, cancellationToken),
             "approve" => await HandleResolutionAsync(userId, parsed.Target, "Completed", "approved", dbContext, cancellationToken),
             "dismiss" => await HandleResolutionAsync(userId, parsed.Target, "Dismissed", "dismissed", dbContext, cancellationToken),
-            _ => await HandleUnknownAsync(userId, dbContext, cancellationToken)
+            _ => await HandleAiQueryAsync(userId, messageBody, dbContext, autonomousInsightService, cancellationToken)
         };
     }
 
@@ -220,16 +297,29 @@ internal static class MessagingCommandProcessor
             newStatus == "Dismissed" ? "Medium" : "Info");
     }
 
-    private static async Task<MessagingCommandResult> HandleUnknownAsync(
+    private static async Task<MessagingCommandResult> HandleAiQueryAsync(
         Guid userId,
+        string messageBody,
         DracoDbContext dbContext,
+        IAutonomousInsightService autonomousInsightService,
         CancellationToken cancellationToken)
     {
+        var response = await autonomousInsightService.AnswerUserQueryAsync(userId, messageBody, cancellationToken);
+        if (response is not null && !string.IsNullOrWhiteSpace(response.Narrative))
+        {
+            return new MessagingCommandResult(
+                "ai-query",
+                response.Narrative.Trim(),
+                $"Answered AI query: {messageBody.Trim()}",
+                "Info",
+                "Info");
+        }
+
         var openCount = await CountOpenRunsAsync(userId, dbContext, cancellationToken);
         return new MessagingCommandResult(
-            "unknown",
-            $"Draco did not recognize that command. Reply HELP for command options. Open workflow items: {openCount}.",
-            "Received unknown command.",
+            "ai-query-fallback",
+            $"Draco could not answer that just yet. Reply HELP for command options. Open workflow items: {openCount}.",
+            "AI query fallback response returned.",
             "Warning",
             "Low");
     }

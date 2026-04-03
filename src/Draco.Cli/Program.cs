@@ -27,6 +27,7 @@ ConfigureServices(serviceCollection, configuration);
 var serviceProvider = serviceCollection.BuildServiceProvider();
 
 var rootCommand = new RootCommand("Draco: Autonomous Cloud Governance Sentinel");
+var discoveryIntervalMinutes = Math.Max(1, configuration.GetValue<int?>("DRACO_DISCOVERY_INTERVAL_MINUTES") ?? 20);
 
 var startCommand = new Command("start", "Starts the Draco sentinel monitoring loop");
 startCommand.SetHandler(async () =>
@@ -51,8 +52,8 @@ startCommand.SetHandler(async () =>
                 await discoveryService.RunDiscoveryAsync(cts.Token);
             });
 
-        AnsiConsole.MarkupLine($"[grey]{DateTime.Now:T}[/] [green]Scan complete.[/] Sleeping for 60 seconds...");
-        await Task.Delay(TimeSpan.FromSeconds(60), cts.Token);
+        AnsiConsole.MarkupLine($"[grey]{DateTime.Now:T}[/] [green]Scan complete.[/] Sleeping for {discoveryIntervalMinutes} minute{(discoveryIntervalMinutes == 1 ? string.Empty : "s")}...");
+        await Task.Delay(TimeSpan.FromMinutes(discoveryIntervalMinutes), cts.Token);
     }
 });
 

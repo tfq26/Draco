@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { Bot, ChevronRight, Loader2, MessageCircle, Sparkles, X } from 'lucide-react'
+import { Loader2, MessageCircle, X } from 'lucide-react'
 import { dracoApi, type AutonomousInsightQueryResponse } from '../lib/api'
 
 type ChatMessage =
@@ -25,14 +25,7 @@ const starterPrompts = [
 export function AssistantWidget() {
   const [isOpen, setIsOpen] = useState(false)
   const [query, setQuery] = useState('')
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: 'welcome',
-      role: 'assistant',
-      content:
-        "Ask Draco about your environment, costs, storage, or active risks. I'll summarize what I'm seeing and propose next steps, but I won't take action without your approval.",
-    },
-  ])
+  const [messages, setMessages] = useState<ChatMessage[]>([])
 
   const latestReport = useMemo(() => {
     for (const message of [...messages].reverse()) {
@@ -73,24 +66,9 @@ export function AssistantWidget() {
   return (
     <div className="assistant-shell">
       {isOpen && (
-        <div className="assistant-panel premium-glass">
-          <div className="assistant-header">
-            <div>
-              <div className="assistant-eyebrow">
-                <Sparkles size={12} />
-                Draco AI
-              </div>
-              <div className="assistant-title">Cloud Assistant</div>
-              <div className="assistant-subtitle">Grounded answers across your connected environments</div>
-            </div>
-            <button
-              type="button"
-              className="assistant-icon-button"
-              onClick={() => setIsOpen(false)}
-              aria-label="Close assistant"
-            >
-              <X size={16} />
-            </button>
+        <div className="assistant-panel">
+          <div className="assistant-minimal-intro">
+            Ask about costs, storage, risks, or a specific resource.
           </div>
 
           <div className="assistant-body">
@@ -100,11 +78,6 @@ export function AssistantWidget() {
                   key={message.id}
                   className={`assistant-message assistant-message-${message.role}`}
                 >
-                  {message.role === 'assistant' && (
-                    <div className="assistant-avatar">
-                      <Bot size={14} />
-                    </div>
-                  )}
                   <div className="assistant-bubble">
                     <div style={{ whiteSpace: 'pre-wrap' }}>{message.content}</div>
 
@@ -145,12 +118,9 @@ export function AssistantWidget() {
 
               {queryMutation.isPending && (
                 <div className="assistant-message assistant-message-assistant">
-                  <div className="assistant-avatar">
-                    <Bot size={14} />
-                  </div>
                   <div className="assistant-bubble assistant-loading">
                     <Loader2 size={14} className="animate-spin" />
-                    Draco is reviewing your environment...
+                    Reviewing your environment...
                   </div>
                 </div>
               )}
@@ -165,8 +135,7 @@ export function AssistantWidget() {
                     className="assistant-starter"
                     onClick={() => void handleSubmit(prompt)}
                   >
-                    <span>{prompt}</span>
-                    <ChevronRight size={14} />
+                    {prompt}
                   </button>
                 ))}
               </div>
@@ -198,7 +167,7 @@ export function AssistantWidget() {
             <textarea
               value={query}
               onChange={event => setQuery(event.target.value)}
-              placeholder="Ask about storage, costs, anomalies, or a specific resource..."
+              placeholder="Ask Draco..."
               rows={1}
               className="assistant-input"
             />

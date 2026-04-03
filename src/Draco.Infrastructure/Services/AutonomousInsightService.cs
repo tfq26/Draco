@@ -198,6 +198,11 @@ Speak naturally, like an experienced engineer reviewing the environment for them
 Lead with what you are seeing, then call out anything notable, then mention action ideas only as proposals.
 Every action must be framed as requiring explicit user approval before execution.
 If storage or another resource category is in scope, talk through the actual resources in that category instead of giving generic advice.
+Default to a short answer: 2-4 sentences for most questions.
+Only expand beyond that when the user explicitly asks for more detail or when extra explanation is needed to avoid a misleading answer.
+Prefer one compact paragraph over lists unless the content is inherently list-shaped.
+Prefer plain language over flourish. Do not use emojis unless the user explicitly asks for them.
+For cost questions, explain the difference between actual spend, budget forecast, and estimated totals before proposing any action.
 """;
 
         var narrative = await _aiService.ProcessQueryAsync(
@@ -302,11 +307,16 @@ If storage or another resource category is in scope, talk through the actual res
         var findings = new List<string>
         {
             $"{focusArea} scope includes {observations.Count} matched resources across {observations.Select(item => item.Provider).Distinct(StringComparer.OrdinalIgnoreCase).Count()} provider(s).",
-            $"Current monthly spend across the environment is {context.Overview.CurrentMonthlyCost:0.##} with forecasted monthly spend at {context.Overview.ForecastMonthlyCost:0.##}.",
+            $"Actual current spend is {context.Overview.ActualMonthlyCost:0.##}, budget forecast is {context.Overview.BudgetForecastMonthlyCost:0.##}, and snapshot forecast is {context.Overview.ForecastMonthlyCost:0.##}.",
         };
 
+        if (context.Overview.HasEstimatedFallbackCosts)
+        {
+            findings.Add($"Estimated fallback totals currently add {context.Overview.EstimatedMonthlyCost:0.##} and should not be treated as actual billed spend.");
+        }
+
         var topCost = observations
-            .Where(item => item.MonthlyCost.HasValue)
+            .Where(item => item.MonthlyCost.HasValue && (item.MonthlyCost ?? 0m) > 0m)
             .OrderByDescending(item => item.MonthlyCost)
             .FirstOrDefault();
         if (topCost is not null)
@@ -387,6 +397,13 @@ If storage or another resource category is in scope, talk through the actual res
             .Where(resource => tokens.Count == 0 || tokens.Any(token => MatchesToken(resource, token)))
             .OrderBy(resource => resource.Name)
             .ToList();
+
+        if (focusArea == "Cost" && results.Count < 3)
+        {
+            return resources
+                .OrderBy(resource => resource.Name)
+                .ToList();
+        }
 
         return results;
     }

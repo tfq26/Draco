@@ -1,6 +1,6 @@
 import { createRootRoute, Link, Outlet, useLocation, useNavigate } from '@tanstack/react-router'
 import { TanStackRouterDevtools } from '@tanstack/router-devtools'
-import { Sun, Moon, Settings, LogOut, ChevronDown, RefreshCcw } from 'lucide-react'
+import { Sun, Moon, Settings, LogOut, ChevronDown, RefreshCcw, Check } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import dracoBlack from '../assets/draco-black.svg'
@@ -19,6 +19,7 @@ function RootComponent() {
   const queryClient = useQueryClient()
 
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
+  const [showSyncSuccess, setShowSyncSuccess] = useState(false)
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     const saved = localStorage.getItem('draco-theme')
     if (saved) return saved as 'light' | 'dark'
@@ -72,11 +73,21 @@ function RootComponent() {
   const syncMutation = useMutation({
     mutationFn: () => dracoApi.cloudConnections.sync(),
     onSuccess: async () => {
+      setShowSyncSuccess(true)
       await queryClient.invalidateQueries({ queryKey: ['me'] })
       await queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] })
       await queryClient.invalidateQueries({ queryKey: ['resources'] })
     },
   })
+
+  useEffect(() => {
+    if (!showSyncSuccess) {
+      return
+    }
+
+    const timeoutId = window.setTimeout(() => setShowSyncSuccess(false), 1800)
+    return () => window.clearTimeout(timeoutId)
+  }, [showSyncSuccess])
 
   return (
     <>
@@ -114,22 +125,24 @@ function RootComponent() {
           </div>
           <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
             {hasToken && (
-               <button 
+              <button 
                 onClick={() => syncMutation.mutate()}
                 disabled={syncMutation.isPending}
                 className="btn-secondary" 
                 style={{ 
-                  width: '32px', 
+                  minWidth: '32px', 
                   height: '32px', 
-                  padding: 0, 
+                  padding: showSyncSuccess ? '0 0.45rem' : 0, 
                   display: 'flex', 
                   alignItems: 'center', 
                   justifyContent: 'center',
+                  gap: '0.35rem',
                   borderRadius: 'var(--radius-md)',
                   color: syncMutation.isPending ? 'var(--primary)' : 'inherit'
                 }}
                 title="Universal Cloud Sync"
               >
+                {showSyncSuccess && !syncMutation.isPending && <Check size={13} color="#34d399" />}
                 <RefreshCcw size={16} className={syncMutation.isPending ? 'animate-spin' : ''} />
               </button>
             )}

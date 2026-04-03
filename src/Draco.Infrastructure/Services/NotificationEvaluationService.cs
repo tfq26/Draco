@@ -189,6 +189,10 @@ public class NotificationEvaluationService : INotificationEvaluationService
                 notification.IsRead = false;
                 notificationsToDispatch.Add(notification);
             }
+            else if (!notification.LastDeliveredAt.HasValue)
+            {
+                notificationsToDispatch.Add(notification);
+            }
 
             updatedCount++;
         }
@@ -204,9 +208,24 @@ public class NotificationEvaluationService : INotificationEvaluationService
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        foreach (var notification in notificationsToDispatch)
+        var deliveryTimestampsChanged = false;
+        foreach (var notification in notificationsToDispatch
+                     .GroupBy(item => item.Id)
+                     .Select(group => group.First()))
         {
-            await _notificationDeliveryService.DeliverAsync(userAccount, notification, cancellationToken);
+            var delivered = await _notificationDeliveryService.DeliverAsync(userAccount, notification, cancellationToken);
+            if (!delivered)
+            {
+                continue;
+            }
+
+            notification.LastDeliveredAt = DateTime.UtcNow;
+            deliveryTimestampsChanged = true;
+        }
+
+        if (deliveryTimestampsChanged)
+        {
+            await _dbContext.SaveChangesAsync(cancellationToken);
         }
 
         _logger.LogInformation(

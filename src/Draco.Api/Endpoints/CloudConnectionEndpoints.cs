@@ -44,6 +44,9 @@ public static class CloudConnectionEndpoints
         group.MapDelete("/{id:int}", DeleteConnectionAsync)
             .WithName("DeleteCloudConnection");
 
+        group.MapGet("/{id:int}/eventing-export", GetEventingExportAsync)
+            .WithName("GetCloudConnectionEventingExport");
+
         group.MapPost("/sync", SyncConnectionsAsync)
             .WithName("SyncCloudConnections");
     }
@@ -303,6 +306,133 @@ public static class CloudConnectionEndpoints
 
         await dbContext.SaveChangesAsync(cancellationToken);
         return Results.Ok(new { message = "Cloud connection disabled." });
+    }
+
+    private static async Task<IResult> GetEventingExportAsync(
+        int id,
+        ClaimsPrincipal userPrincipal,
+        DracoDbContext dbContext,
+        HttpContext httpContext,
+        IConfiguration configuration,
+        CancellationToken cancellationToken)
+    {
+        var user = await userPrincipal.GetCurrentUserAsync(dbContext, cancellationToken);
+        if (user is null)
+        {
+            return Results.Unauthorized();
+        }
+
+        var connection = user.Connections.FirstOrDefault(existing => existing.Id == id && existing.IsActive);
+        if (connection is null)
+        {
+            return Results.NotFound(new { message = "Active cloud connection not found." });
+        }
+
+        var ingestionSecret = configuration["DRACO_EVENT_INGESTION_SECRET"];
+        if (string.IsNullOrWhiteSpace(ingestionSecret))
+        {
+            return Results.Problem(
+                "DRACO_EVENT_INGESTION_SECRET is not configured on the API.",
+                statusCode: StatusCodes.Status500InternalServerError);
+        }
+
+        var provider = AuthEndpoints.NormalizeProvider(connection.Provider);
+        var userEmail = user.Email?.Trim() ?? string.Empty;
+        var baseUrl = $"{httpContext.Request.Scheme}://{httpContext.Request.Host}{httpContext.Request.PathBase}".TrimEnd('/');
+        var detectedLocations = await dbContext.CloudResources
+            .Where(resource =>
+                resource.Provider == provider &&
+                resource.SubscriptionId == connection.SubscriptionId &&
+                !string.IsNullOrWhiteSpace(resource.Location))
+            .Select(resource => resource.Location.Trim())
+            .Distinct()
+            .OrderBy(location => location)
+            .ToListAsync(cancellationToken);
+
+        var defaultLocation = detectedLocations.FirstOrDefault() ??
+            (string.Equals(provider, "Azure", StringComparison.OrdinalIgnoreCase) ? "eastus" : "us-east-1");
+
+        if (string.Equals(provider, "Azure", StringComparison.OrdinalIgnoreCase))
+        {
+            var webhookBaseUrl = $"{baseUrl}/api/events/azure/activity-log";
+            var detectedResourceGroups = await dbContext.CloudResources
+                .Where(resource =>
+                    resource.Provider == provider &&
+                    resource.SubscriptionId == connection.SubscriptionId &&
+                    !string.IsNullOrWhiteSpace(resource.ResourceGroupName))
+                .Select(resource => resource.ResourceGroupName.Trim())
+                .Distinct()
+                .OrderBy(resourceGroup => resourceGroup)
+                .ToListAsync(cancellationToken);
+            var defaultResourceGroup = detectedResourceGroups.FirstOrDefault() ?? "draco-monitoring-rg";
+            var discoveryReady = detectedLocations.Count > 0 && detectedResourceGroups.Count > 0;
+
+            return Results.Ok(new CloudConnectionEventingExportResponse(
+                Provider: provider,
+                ConnectionId: connection.Id,
+                DisplayName: connection.DisplayName,
+                SubscriptionId: connection.SubscriptionId,
+                WebhookUrl: BuildAzureWebhookUrl(webhookBaseUrl, ingestionSecret, userEmail),
+                Variables: new Dictionary<string, string>
+                {
+                    ["resource_group_name"] = defaultResourceGroup,
+                    ["location"] = defaultLocation,
+                    ["subscription_id"] = connection.SubscriptionId,
+                    ["draco_activity_webhook_url"] = webhookBaseUrl,
+                    ["draco_event_ingestion_secret"] = ingestionSecret,
+                    ["draco_user_email"] = userEmail
+                },
+                TfvarsText: BuildTfvarsText(new (string Key, string Value)[]
+                {
+                    ("resource_group_name", defaultResourceGroup),
+                    ("location", defaultLocation),
+                    ("subscription_id", connection.SubscriptionId),
+                    ("draco_activity_webhook_url", webhookBaseUrl),
+                    ("draco_event_ingestion_secret", ingestionSecret),
+                    ("draco_user_email", userEmail)
+                }),
+                TemplatePath: "src/Draco.Cli/Infrastructure/Terraform/examples/azure-activity-log-alert.tf.example",
+                DetectedLocations: detectedLocations,
+                DefaultLocation: defaultLocation,
+                DetectedResourceGroups: detectedResourceGroups,
+                DefaultResourceGroup: defaultResourceGroup,
+                DiscoveryReady: discoveryReady,
+                DiscoveryMessage: discoveryReady
+                    ? "Detected resource groups and locations are ready for this Azure connection."
+                    : "Draco needs a completed sync for this Azure connection before resource group and location selectors are fully available."));
+        }
+
+        var eventsIngestUrl = $"{baseUrl}/api/events/ingest";
+        var awsDiscoveryReady = detectedLocations.Count > 0;
+        return Results.Ok(new CloudConnectionEventingExportResponse(
+            Provider: provider,
+            ConnectionId: connection.Id,
+            DisplayName: connection.DisplayName,
+            SubscriptionId: connection.SubscriptionId,
+            WebhookUrl: eventsIngestUrl,
+            Variables: new Dictionary<string, string>
+            {
+                ["aws_region"] = defaultLocation,
+                ["draco_api_events_ingest_url"] = eventsIngestUrl,
+                ["draco_event_ingestion_secret"] = ingestionSecret,
+                ["draco_user_email"] = userEmail
+            },
+            TfvarsText: BuildTfvarsText(new (string Key, string Value)[]
+            {
+                ("aws_region", defaultLocation),
+                ("draco_api_events_ingest_url", eventsIngestUrl),
+                ("draco_event_ingestion_secret", ingestionSecret),
+                ("draco_user_email", userEmail)
+            }),
+            TemplatePath: "src/Draco.Cli/Infrastructure/Terraform/examples/aws-eventbridge-forwarder.tf.example",
+            DetectedLocations: detectedLocations,
+            DefaultLocation: defaultLocation,
+            DetectedResourceGroups: new List<string>(),
+            DefaultResourceGroup: null,
+            DiscoveryReady: awsDiscoveryReady,
+            DiscoveryMessage: awsDiscoveryReady
+                ? "Detected AWS regions are ready for this connection."
+                : "Draco needs a completed sync for this AWS connection before region selection is fully available."));
     }
 
     private static async Task<IResult> SyncConnectionsAsync(
@@ -612,7 +742,10 @@ public static class CloudConnectionEndpoints
                     dbContext.CloudResourceCosts.AddRange(resourceCosts);
                 }
 
-                var estimatedMonthlyCost = resourceCosts.Sum(cost => cost.Amount);
+                var preferredSnapshotCosts = resourceCosts.Any(cost => !string.Equals(cost.CostSource, "Estimated", StringComparison.OrdinalIgnoreCase))
+                    ? resourceCosts.Where(cost => !string.Equals(cost.CostSource, "Estimated", StringComparison.OrdinalIgnoreCase)).ToList()
+                    : resourceCosts;
+                var estimatedMonthlyCost = preferredSnapshotCosts.Sum(cost => cost.Amount);
                 var existingSnapshots = await dbContext.CloudCostSnapshots
                     .Where(snapshot =>
                         snapshot.UserId == user.Id &&
@@ -640,10 +773,13 @@ public static class CloudConnectionEndpoints
                     CapturedAt = DateTimeOffset.UtcNow,
                     RawData = JsonSerializer.Serialize(new
                     {
-                        source = "resource-cost-sync",
+                        source = preferredSnapshotCosts.Count == resourceCosts.Count
+                            ? "resource-cost-sync"
+                            : "actual-preferred-resource-cost-sync",
                         resourceCount = resources.Count,
                         actualCostCount = resourceCosts.Count(cost => !string.Equals(cost.CostSource, "Estimated", StringComparison.OrdinalIgnoreCase)),
-                        estimatedFallbackCount = resourceCosts.Count(cost => string.Equals(cost.CostSource, "Estimated", StringComparison.OrdinalIgnoreCase))
+                        estimatedFallbackCount = resourceCosts.Count(cost => string.Equals(cost.CostSource, "Estimated", StringComparison.OrdinalIgnoreCase)),
+                        snapshotCostCount = preferredSnapshotCosts.Count
                     })
                 });
 
@@ -709,6 +845,25 @@ public static class CloudConnectionEndpoints
         syncStatus = connection.SyncStatus,
         syncMessage = connection.SyncMessage
     };
+
+    private static string BuildAzureWebhookUrl(string webhookBaseUrl, string ingestionSecret, string userEmail)
+    {
+        var query = new List<string>
+        {
+            $"code={Uri.EscapeDataString(ingestionSecret)}"
+        };
+
+        if (!string.IsNullOrWhiteSpace(userEmail))
+        {
+            query.Add($"userEmail={Uri.EscapeDataString(userEmail)}");
+        }
+
+        return $"{webhookBaseUrl}?{string.Join("&", query)}";
+    }
+
+    private static string BuildTfvarsText(IEnumerable<(string Key, string Value)> values) =>
+        string.Join(Environment.NewLine, values.Select(entry =>
+            $"{entry.Key} = {JsonSerializer.Serialize(entry.Value)}"));
 
     private static string GetAzureTenantSegment(IConfiguration configuration) =>
         string.IsNullOrWhiteSpace(configuration["AZURE_TENANT_ID"])
@@ -1251,6 +1406,21 @@ public sealed record CloudConnectionRequest(
     bool? IsActive);
 
 public sealed record SyncConnectionsRequest(List<int>? ConnectionIds);
+public sealed record CloudConnectionEventingExportResponse(
+    string Provider,
+    int ConnectionId,
+    string? DisplayName,
+    string SubscriptionId,
+    string WebhookUrl,
+    Dictionary<string, string> Variables,
+    string TfvarsText,
+    string TemplatePath,
+    List<string> DetectedLocations,
+    string DefaultLocation,
+    List<string> DetectedResourceGroups,
+    string? DefaultResourceGroup,
+    bool DiscoveryReady,
+    string DiscoveryMessage);
 public sealed record AzureCodeExchangeRequest(string Code, string RedirectUri);
 public sealed record AzureExchangeResponse(
     string AccessToken,

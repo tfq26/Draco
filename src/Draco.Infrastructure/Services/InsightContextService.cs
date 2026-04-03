@@ -150,6 +150,13 @@ public class InsightContextService : IInsightContextService
         var resourceGroupCostBreakdown = BuildResourceGroupCostBreakdown(preferredRollupResourceCosts);
         var resourceCostBreakdown = BuildResourceCostBreakdown(resources, preferredRollupResourceCosts);
         var budgetStatuses = BuildBudgetStatuses(budgets, costBreakdown);
+        var actualMonthlyCost = providerCostBreakdown.Sum(item => item.TotalAmount);
+        var estimatedMonthlyCost = latestResourceCosts
+            .Where(cost => string.Equals(cost.CostSource, "Estimated", StringComparison.OrdinalIgnoreCase))
+            .Sum(cost => cost.Amount);
+        var budgetForecastMonthlyCost = budgets
+            .Where(budget => budget.ForecastSpend.HasValue)
+            .Sum(budget => budget.ForecastSpend ?? 0m);
         var insightRecommendations = recommendations.Select(recommendation => new InsightRecommendation
         {
             Id = recommendation.Id,
@@ -183,9 +190,13 @@ public class InsightContextService : IInsightContextService
             OpenAlertCount = insightRecommendations.Count(recommendation => recommendation.Status.Equals("Pending", StringComparison.OrdinalIgnoreCase)),
             AnomalyCount = anomalies.Count,
             CurrentMonthlyCost = providerCostBreakdown.Count > 0
-                ? providerCostBreakdown.Sum(item => item.TotalAmount)
+                ? actualMonthlyCost
                 : costBreakdown.Sum(item => item.CurrentAmount),
             ForecastMonthlyCost = ForecastMonthlyCost(costSnapshots),
+            ActualMonthlyCost = actualMonthlyCost,
+            EstimatedMonthlyCost = estimatedMonthlyCost,
+            BudgetForecastMonthlyCost = budgetForecastMonthlyCost,
+            HasEstimatedFallbackCosts = latestResourceCosts.Any(cost => string.Equals(cost.CostSource, "Estimated", StringComparison.OrdinalIgnoreCase)),
             PotentialMonthlySavings = insightRecommendations.Sum(recommendation => recommendation.PotentialSavings),
             LastSyncedAt = latestSyncAt
         };
@@ -227,6 +238,15 @@ public class InsightContextService : IInsightContextService
         {
             generatedAt = context.GeneratedAt,
             overview = context.Overview,
+            costInterpretation = new
+            {
+                currentActualSpend = context.Overview.ActualMonthlyCost,
+                latestEstimatedFallbackTotal = context.Overview.EstimatedMonthlyCost,
+                budgetForecast = context.Overview.BudgetForecastMonthlyCost,
+                forecastFromSnapshots = context.Overview.ForecastMonthlyCost,
+                hasEstimatedFallbackCosts = context.Overview.HasEstimatedFallbackCosts,
+                guidance = "Treat actual spend, budget forecast, and estimated fallback totals as separate values. Do not merge them or attribute an environment-level estimate to one resource type unless the context explicitly supports that conclusion."
+            },
             connectionHealth = context.Connections,
             providerBreakdown = context.ProviderBreakdown,
             topCostBreakdown = context.CostBreakdown.Take(10),
@@ -371,6 +391,7 @@ public class InsightContextService : IInsightContextService
                 SubscriptionId = budget.SubscriptionId,
                 LimitAmount = budget.Amount,
                 CurrentAmount = currentAmount,
+                ForecastAmount = budget.ForecastSpend,
                 RemainingAmount = budget.Amount - currentAmount,
                 AlertThresholdPercentage = budget.AlertThresholdPercentage,
                 ConsumedPercentage = consumedPercentage,

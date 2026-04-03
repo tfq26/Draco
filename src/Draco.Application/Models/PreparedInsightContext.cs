@@ -31,6 +31,10 @@ public sealed class InsightOverview
     public int AnomalyCount { get; init; }
     public decimal CurrentMonthlyCost { get; init; }
     public decimal ForecastMonthlyCost { get; init; }
+    public decimal ActualMonthlyCost { get; init; }
+    public decimal EstimatedMonthlyCost { get; init; }
+    public decimal BudgetForecastMonthlyCost { get; init; }
+    public bool HasEstimatedFallbackCosts { get; init; }
     public decimal PotentialMonthlySavings { get; init; }
     public DateTimeOffset? LastSyncedAt { get; init; }
 }
@@ -114,6 +118,7 @@ public sealed class InsightBudgetStatus
     public string SubscriptionId { get; init; } = string.Empty;
     public decimal LimitAmount { get; init; }
     public decimal CurrentAmount { get; init; }
+    public decimal? ForecastAmount { get; init; }
     public decimal RemainingAmount { get; init; }
     public double AlertThresholdPercentage { get; init; }
     public double ConsumedPercentage { get; init; }

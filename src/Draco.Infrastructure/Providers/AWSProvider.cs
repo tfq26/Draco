@@ -474,11 +474,11 @@ public class AWSProvider : ICloudProvider
         {
             var value when value.Contains("ec2::instance", StringComparison.Ordinal) => 110m,
             var value when value.Contains("rds::dbinstance", StringComparison.Ordinal) => 145m,
-            var value when value.Contains("s3::bucket", StringComparison.Ordinal) => 15m,
+            var value when value.Contains("s3::bucket", StringComparison.Ordinal) => 2m,
             var value when value.Contains("eks::cluster", StringComparison.Ordinal) => 180m,
             var value when value.Contains("elasticloadbalancing", StringComparison.Ordinal) => 24m,
-            var value when value.Contains("lambda::function", StringComparison.Ordinal) => 8m,
-            _ => 12m,
+            var value when value.Contains("lambda::function", StringComparison.Ordinal) => 1m,
+            _ => 0m,
         };
 
         return Task.FromResult(estimate);

@@ -2,13 +2,8 @@ import { createRoute, useNavigate } from '@tanstack/react-router'
 import { Route as rootRoute } from './__root'
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-<<<<<<< HEAD
-import { User, Bell, Key, Lock, Plus, Loader2, AlertCircle, CheckCircle2, RefreshCcw, Unplug, ShieldCheck, Info, Mail, MessageSquare, Send } from 'lucide-react'
-import { API_BASE_URL, dracoApi, type AzureSubscriptionOption, type CloudConnection, type NotificationDeliveryPreferences } from '../lib/api'
-=======
-import { User, Bell, Key, Lock, Plus, Loader2, AlertCircle, CheckCircle2, RefreshCcw, Unplug, ShieldCheck, Info, Mail, Trash2, Smartphone, MessageSquare, Send, X, Check } from 'lucide-react'
-import { API_BASE_URL, dracoApi, type AzureSubscriptionOption, type CloudConnection } from '../lib/api'
->>>>>>> c4bc3d5 (Add multi-recipient Twilio delivery for SMS and WhatsApp)
+import { User, Bell, Key, Lock, Plus, Loader2, AlertCircle, CheckCircle2, RefreshCcw, Unplug, ShieldCheck, Info, Mail, Smartphone, MessageSquare, Send, X, Check } from 'lucide-react'
+import { API_BASE_URL, dracoApi, type AzureSubscriptionOption, type CloudConnection, type CloudConnectionEventingExport } from '../lib/api'
 import { copyToClipboard, getAwsBootstrapErrorMessage } from '../lib/awsOnboarding'
 import azureLogo from '../assets/azure-logo.svg'
 import awsLogo from '../assets/aws-logo.svg'
@@ -37,16 +32,6 @@ const PROVIDERS = [
   { id: 'AWS', name: 'AWS', description: 'Add another AWS account or environment.', logo: awsLogo },
 ]
 
-const DEFAULT_NOTIFICATION_PREFERENCES: NotificationDeliveryPreferences = {
-  browserEnabled: true,
-  emailEnabled: false,
-  emailAddress: '',
-  messagesEnabled: false,
-  messagesNumber: '',
-  whatsAppEnabled: false,
-  whatsAppNumber: '',
-}
-
 function Settings() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -69,15 +54,9 @@ function Settings() {
   const [awsSessionToken, setAwsSessionToken] = useState('')
   const [copiedAwsValue, setCopiedAwsValue] = useState<string | null>(null)
   const [isAwsAccountDrawerOpen, setIsAwsAccountDrawerOpen] = useState(false)
-<<<<<<< HEAD
-  const [notificationPreferences, setNotificationPreferences] = useState<NotificationDeliveryPreferences>(DEFAULT_NOTIFICATION_PREFERENCES)
-=======
-  const [notificationEmails, setNotificationEmails] = useState<string[]>([])
-  const [newEmail, setNewEmail] = useState('')
   const [smsRecipients, setSmsRecipients] = useState<string[]>([])
   const [whatsAppRecipients, setWhatsAppRecipients] = useState<string[]>([])
   const [preferredChannels, setPreferredChannels] = useState<Array<'SMS' | 'WhatsApp'>>(['SMS'])
->>>>>>> c4bc3d5 (Add multi-recipient Twilio delivery for SMS and WhatsApp)
   const [azureSubscriptions, setAzureSubscriptions] = useState<AzureSubscriptionOption[]>([])
   const [selectedAzureSubscriptionId, setSelectedAzureSubscriptionId] = useState('')
   const [azureTokenBundle, setAzureTokenBundle] = useState<{
@@ -220,18 +199,6 @@ function Settings() {
     onSuccess: refreshViews,
   })
 
-  const saveNotificationPreferencesMutation = useMutation({
-    mutationFn: () => dracoApi.notifications.updatePreferences(notificationPreferences),
-    onSuccess: async (preferences) => {
-      setNotificationPreferences(preferences)
-      await refreshViews()
-    },
-  })
-
-  const sendTestNotificationMutation = useMutation({
-    mutationFn: () => dracoApi.notifications.createTest(),
-  })
-
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const code = params.get('code')
@@ -275,23 +242,6 @@ function Settings() {
 
     void completeAzureSignIn()
   }, [])
-
-  useEffect(() => {
-    if (!user) {
-      return
-    }
-
-    const resolvedPreferences = user.notificationPreferences ?? DEFAULT_NOTIFICATION_PREFERENCES
-    setNotificationPreferences({
-      browserEnabled: resolvedPreferences.browserEnabled ?? true,
-      emailEnabled: resolvedPreferences.emailEnabled ?? false,
-      emailAddress: resolvedPreferences.emailAddress || user.email || '',
-      messagesEnabled: resolvedPreferences.messagesEnabled ?? false,
-      messagesNumber: resolvedPreferences.messagesNumber || user.phone || '',
-      whatsAppEnabled: resolvedPreferences.whatsAppEnabled ?? false,
-      whatsAppNumber: resolvedPreferences.whatsAppNumber || user.phone || '',
-    })
-  }, [user])
 
   useEffect(() => {
     setSmsRecipients(user?.smsRecipients ?? (user?.phone ? [user.phone] : []))
@@ -818,138 +768,6 @@ function Settings() {
             </TabsContent>
 
             <TabsContent value="notifications" className="animate-fade-in" style={{ marginTop: 0 }}>
-<<<<<<< HEAD
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-                <div className="card" style={{ padding: '2.5rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
-                    <Bell className="text-primary" size={24} />
-                    <h3 style={{ fontSize: '1.25rem', fontWeight: 800 }}>Notification Center</h3>
-                  </div>
-                  <p style={{ color: 'var(--muted-foreground)', marginBottom: '2.5rem' }}>
-                    Browser alerts stay on by default. Messages, email, and WhatsApp can be enabled per user and are sent from the same Draco notification pipeline.
-                  </p>
-
-                  <div style={{ display: 'grid', gap: '1rem' }}>
-                    <div className="operational-surface" style={{ padding: '1.25rem', display: 'grid', gap: '1rem' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem' }}>
-                        <div>
-                          <div style={{ fontWeight: 700 }}>Browser</div>
-                          <div style={{ fontSize: '0.8rem', color: 'var(--muted-foreground)' }}>In-app notifications and drawer updates.</div>
-                        </div>
-                        <input
-                          type="checkbox"
-                          checked={notificationPreferences.browserEnabled}
-                          onChange={(event) => setNotificationPreferences((current) => ({ ...current, browserEnabled: event.target.checked }))}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="operational-surface" style={{ padding: '1.25rem', display: 'grid', gap: '1rem' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem' }}>
-                        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-                          <MessageSquare size={18} className="text-primary" />
-                          <div>
-                            <div style={{ fontWeight: 700 }}>Messages</div>
-                            <div style={{ fontSize: '0.8rem', color: 'var(--muted-foreground)' }}>Primary mobile channel for immediate Draco alerts.</div>
-                          </div>
-                        </div>
-                        <input
-                          type="checkbox"
-                          checked={notificationPreferences.messagesEnabled}
-                          onChange={(event) => setNotificationPreferences((current) => ({ ...current, messagesEnabled: event.target.checked }))}
-                        />
-                      </div>
-                      <div>
-                        <label className="micro-label" style={{ display: 'block', marginBottom: '0.5rem' }}>Mobile Number</label>
-                        <input
-                          value={notificationPreferences.messagesNumber || ''}
-                          onChange={(event) => setNotificationPreferences((current) => ({ ...current, messagesNumber: event.target.value }))}
-                          className="operational-surface"
-                          style={{ width: '100%', padding: '0.75rem 1rem' }}
-                          placeholder="+1 555 555 5555"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="operational-surface" style={{ padding: '1.25rem', display: 'grid', gap: '1rem' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem' }}>
-                        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-                          <Mail size={18} className="text-primary" />
-                          <div>
-                            <div style={{ fontWeight: 700 }}>Email</div>
-                            <div style={{ fontSize: '0.8rem', color: 'var(--muted-foreground)' }}>Longer-form summaries and alert context.</div>
-                          </div>
-                        </div>
-                        <input
-                          type="checkbox"
-                          checked={notificationPreferences.emailEnabled}
-                          onChange={(event) => setNotificationPreferences((current) => ({ ...current, emailEnabled: event.target.checked }))}
-                        />
-                      </div>
-                      <div>
-                        <label className="micro-label" style={{ display: 'block', marginBottom: '0.5rem' }}>Email Address</label>
-                        <input
-                          value={notificationPreferences.emailAddress || ''}
-                          onChange={(event) => setNotificationPreferences((current) => ({ ...current, emailAddress: event.target.value }))}
-                          className="operational-surface"
-                          style={{ width: '100%', padding: '0.75rem 1rem' }}
-                          placeholder={user.email || 'you@example.com'}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="operational-surface" style={{ padding: '1.25rem', display: 'grid', gap: '1rem' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem' }}>
-                        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-                          <Send size={18} className="text-primary" />
-                          <div>
-                            <div style={{ fontWeight: 700 }}>WhatsApp</div>
-                            <div style={{ fontSize: '0.8rem', color: 'var(--muted-foreground)' }}>Template-friendly mobile delivery for follow-up expansion.</div>
-                          </div>
-                        </div>
-                        <input
-                          type="checkbox"
-                          checked={notificationPreferences.whatsAppEnabled}
-                          onChange={(event) => setNotificationPreferences((current) => ({ ...current, whatsAppEnabled: event.target.checked }))}
-                        />
-                      </div>
-                      <div>
-                        <label className="micro-label" style={{ display: 'block', marginBottom: '0.5rem' }}>WhatsApp Number</label>
-                        <input
-                          value={notificationPreferences.whatsAppNumber || ''}
-                          onChange={(event) => setNotificationPreferences((current) => ({ ...current, whatsAppNumber: event.target.value }))}
-                          className="operational-surface"
-                          style={{ width: '100%', padding: '0.75rem 1rem' }}
-                          placeholder="+1 555 555 5555"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="card" style={{ padding: '1.5rem', display: 'flex', flexWrap: 'wrap', gap: '0.75rem', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <div style={{ fontWeight: 700 }}>Channel Actions</div>
-                    <div style={{ fontSize: '0.8rem', color: 'var(--muted-foreground)' }}>Save your delivery config, then send a live test using the current settings.</div>
-                  </div>
-                  <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-                    <button
-                      className="btn-secondary"
-                      type="button"
-                      onClick={() => void sendTestNotificationMutation.mutateAsync()}
-                      disabled={sendTestNotificationMutation.isPending}
-                    >
-                      {sendTestNotificationMutation.isPending ? 'Sending Test...' : 'Send Test Notification'}
-                    </button>
-                    <button
-                      className="btn-primary"
-                      type="button"
-                      onClick={() => void saveNotificationPreferencesMutation.mutateAsync()}
-                      disabled={saveNotificationPreferencesMutation.isPending}
-                    >
-                      {saveNotificationPreferencesMutation.isPending ? 'Saving...' : 'Save Preferences'}
-                    </button>
-=======
               <div className="card" style={{ padding: '2.5rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
                   <Bell className="text-primary" size={24} />
@@ -1097,27 +915,8 @@ function Settings() {
                         {(sendTestNotificationMutation.error as Error).message}
                       </div>
                     )}
->>>>>>> c4bc3d5 (Add multi-recipient Twilio delivery for SMS and WhatsApp)
                   </div>
                 </div>
-
-                {(saveNotificationPreferencesMutation.isError || sendTestNotificationMutation.isError) && (
-                  <div style={{ color: 'var(--primary)', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <AlertCircle size={16} />
-                    {(saveNotificationPreferencesMutation.error as Error | null)?.message
-                      || (sendTestNotificationMutation.error as Error | null)?.message
-                      || 'Notification settings could not be updated.'}
-                  </div>
-                )}
-
-                {(saveNotificationPreferencesMutation.isSuccess || sendTestNotificationMutation.isSuccess) && (
-                  <div style={{ color: '#00c27a', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <CheckCircle2 size={16} />
-                    {saveNotificationPreferencesMutation.isSuccess
-                      ? 'Notification delivery preferences saved.'
-                      : 'Test notification created and routed through enabled channels.'}
-                  </div>
-                )}
               </div>
             </TabsContent>
           </div>
@@ -1388,6 +1187,8 @@ function ConnectionRow({
   isDisconnecting: boolean
   onDisconnect: () => void
 }) {
+  const [isEventingOpen, setIsEventingOpen] = useState(false)
+  const [copiedEventingValue, setCopiedEventingValue] = useState<string | null>(null)
   const connectionModeLabel =
     connection.provider === 'AWS'
       ? connection.authType === 'AwsAssumeRole'
@@ -1397,36 +1198,279 @@ function ConnectionRow({
           : null
       : null
 
+  const eventingExportQuery = useQuery({
+    queryKey: ['connection-eventing-export', connection.id],
+    queryFn: () => dracoApi.cloudConnections.getEventingExport(connection.id),
+    enabled: isEventingOpen,
+    staleTime: Infinity,
+  })
+
+  const handleCopyEventingValue = async (key: string, value: string) => {
+    try {
+      await copyToClipboard(value)
+      setCopiedEventingValue(key)
+      window.setTimeout(() => {
+        setCopiedEventingValue((current) => current === key ? null : current)
+      }, 1500)
+    } catch {
+      setCopiedEventingValue(null)
+    }
+  }
+
   return (
-    <div className="operational-surface" style={{ padding: '1rem', display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'center' }}>
-      <div>
-        <div style={{ fontWeight: 600 }}>{connection.displayName || connection.provider}</div>
-        <div style={{ fontSize: '0.8125rem', color: 'var(--muted-foreground)' }}>{connection.subscriptionId}</div>
-        {connectionModeLabel && (
-          <div style={{ fontSize: '0.75rem', color: 'var(--muted)', marginTop: '0.25rem' }}>
-            {connectionModeLabel}
+    <div className="operational-surface" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'center' }}>
+        <div>
+          <div style={{ fontWeight: 600 }}>{connection.displayName || connection.provider}</div>
+          <div style={{ fontSize: '0.8125rem', color: 'var(--muted-foreground)' }}>{connection.subscriptionId}</div>
+          {connectionModeLabel && (
+            <div style={{ fontSize: '0.75rem', color: 'var(--muted)', marginTop: '0.25rem' }}>
+              {connectionModeLabel}
+            </div>
+          )}
+          <div style={{ fontSize: '0.75rem', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.25rem' }}>
+            <CheckCircle2 size={14} />
+            {connection.syncStatus} • {connection.syncMessage || 'Waiting for sync'}
           </div>
-        )}
-        <div style={{ fontSize: '0.75rem', color: 'var(--muted)', display: 'flex', alignItems: 'center', gap: '0.35rem', marginTop: '0.25rem' }}>
-          <CheckCircle2 size={14} />
-          {connection.syncStatus} • {connection.syncMessage || 'Waiting for sync'}
+        </div>
+
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <button
+            className="btn-secondary"
+            type="button"
+            onClick={() => setIsEventingOpen(current => !current)}
+          >
+            {isEventingOpen ? 'Hide Eventing' : 'Terraform Values'}
+          </button>
+          <button className="btn-secondary" onClick={onDisconnect} disabled={isDisconnecting} title="Disconnect">
+            {isDisconnecting ? (
+              <>
+                <Loader2 className="animate-spin" size={14} /> Disconnecting...
+              </>
+            ) : (
+              <>
+                <Unplug size={14} />
+              </>
+            )}
+          </button>
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-        <button className="btn-secondary" onClick={onDisconnect} disabled={isDisconnecting} title="Disconnect">
-          {isDisconnecting ? (
-            <>
-              <Loader2 className="animate-spin" size={14} /> Disconnecting...
-            </>
-          ) : (
-            <>
-              <Unplug size={14} />
-              
-            </>
+      {isEventingOpen && (
+        <div style={{ borderTop: '1px solid var(--border)', paddingTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.82rem', color: 'var(--muted-foreground)' }}>
+            <Info size={14} />
+            Copy these values into the matching Terraform example for this connected account.
+          </div>
+
+          {eventingExportQuery.isLoading && (
+            <div style={{ color: 'var(--muted)', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Spinner size={16} />
+              Preparing eventing values...
+            </div>
           )}
+
+          {eventingExportQuery.isError && (
+            <div style={{ color: 'var(--primary)', fontSize: '0.875rem' }}>
+              {(eventingExportQuery.error as Error).message}
+            </div>
+          )}
+
+          {eventingExportQuery.data && (
+            <EventingExportPanel
+              exportConfig={eventingExportQuery.data}
+              copiedValue={copiedEventingValue}
+              onCopy={handleCopyEventingValue}
+            />
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function EventingExportPanel({
+  exportConfig,
+  copiedValue,
+  onCopy,
+}: {
+  exportConfig: CloudConnectionEventingExport
+  copiedValue: string | null
+  onCopy: (key: string, value: string) => Promise<void>
+}) {
+  const isAzure = exportConfig.provider.toLowerCase() === 'azure'
+  const [selectedLocation, setSelectedLocation] = useState(exportConfig.defaultLocation || '')
+  const [selectedResourceGroup, setSelectedResourceGroup] = useState(exportConfig.defaultResourceGroup || '')
+
+  useEffect(() => {
+    setSelectedLocation(exportConfig.defaultLocation || '')
+    setSelectedResourceGroup(exportConfig.defaultResourceGroup || '')
+  }, [exportConfig])
+
+  const computedVariables: Record<string, string> = {
+    ...exportConfig.variables,
+    ...(selectedLocation ? { [isAzure ? 'location' : 'aws_region']: selectedLocation } : {}),
+    ...(isAzure && selectedResourceGroup ? { resource_group_name: selectedResourceGroup } : {}),
+  }
+
+  const tfvarsEntries = isAzure
+    ? [
+        ['resource_group_name', computedVariables.resource_group_name],
+        ['location', computedVariables.location],
+        ['subscription_id', computedVariables.subscription_id],
+        ['draco_activity_webhook_url', computedVariables.draco_activity_webhook_url],
+        ['draco_event_ingestion_secret', computedVariables.draco_event_ingestion_secret],
+        ['draco_user_email', computedVariables.draco_user_email],
+      ]
+    : [
+        ['aws_region', computedVariables.aws_region],
+        ['draco_api_events_ingest_url', computedVariables.draco_api_events_ingest_url],
+        ['draco_event_ingestion_secret', computedVariables.draco_event_ingestion_secret],
+        ['draco_user_email', computedVariables.draco_user_email],
+      ]
+
+  const computedTfvarsText = tfvarsEntries
+    .filter((entry): entry is [string, string] => Boolean(entry[1]))
+    .map(([key, value]) => `${key} = ${JSON.stringify(value)}`)
+    .join('\n')
+  const discoveryReady = exportConfig.discoveryReady
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
+      <div style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>
+        Template: <span style={{ color: 'var(--foreground)', fontFamily: 'var(--font-mono)' }}>{exportConfig.templatePath}</span>
+      </div>
+
+      <div style={{
+        fontSize: '0.82rem',
+        color: discoveryReady ? '#00c27a' : 'var(--muted-foreground)',
+        background: discoveryReady ? 'rgba(0, 194, 122, 0.08)' : 'rgba(255,255,255,0.03)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--radius-md)',
+        padding: '0.8rem 0.9rem',
+      }}>
+        {exportConfig.discoveryMessage}
+      </div>
+
+      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+        <button
+          type="button"
+          className="btn-secondary"
+          onClick={() => void onCopy('tfvars', computedTfvarsText)}
+          disabled={!discoveryReady}
+        >
+          {copiedValue === 'tfvars' ? 'Copied tfvars' : 'Copy tfvars'}
+        </button>
+        <button
+          type="button"
+          className="btn-secondary"
+          onClick={() => void onCopy('webhook', exportConfig.webhookUrl)}
+        >
+          {copiedValue === 'webhook' ? 'Copied webhook' : isAzure ? 'Copy webhook URL' : 'Copy ingest URL'}
         </button>
       </div>
+
+      <div className="grid grid-cols-2" style={{ gap: '0.75rem' }}>
+        {isAzure ? (
+          <div>
+            <label className="micro-label" style={{ display: 'block', marginBottom: '0.45rem' }}>
+              Resource Group
+            </label>
+            <select
+              value={selectedResourceGroup}
+              onChange={(e) => setSelectedResourceGroup(e.target.value)}
+              className="operational-surface"
+              style={{ width: '100%', padding: '0.75rem 1rem' }}
+              disabled={!discoveryReady}
+            >
+              {exportConfig.detectedResourceGroups.map(resourceGroup => (
+                <option key={resourceGroup} value={resourceGroup}>{resourceGroup}</option>
+              ))}
+              {!exportConfig.detectedResourceGroups.includes(selectedResourceGroup) && selectedResourceGroup && (
+                <option value={selectedResourceGroup}>{selectedResourceGroup}</option>
+              )}
+            </select>
+          </div>
+        ) : (
+          <div>
+            <label className="micro-label" style={{ display: 'block', marginBottom: '0.45rem' }}>
+              AWS Region
+            </label>
+            <select
+              value={selectedLocation}
+              onChange={(e) => setSelectedLocation(e.target.value)}
+              className="operational-surface"
+              style={{ width: '100%', padding: '0.75rem 1rem' }}
+              disabled={!discoveryReady}
+            >
+              {exportConfig.detectedLocations.map(location => (
+                <option key={location} value={location}>{location}</option>
+              ))}
+              {!exportConfig.detectedLocations.includes(selectedLocation) && selectedLocation && (
+                <option value={selectedLocation}>{selectedLocation}</option>
+              )}
+            </select>
+          </div>
+        )}
+
+        <div>
+          <label className="micro-label" style={{ display: 'block', marginBottom: '0.45rem' }}>
+            {isAzure ? 'Location' : 'Connected Account ID'}
+          </label>
+          {isAzure ? (
+            <select
+              value={selectedLocation}
+              onChange={(e) => setSelectedLocation(e.target.value)}
+              className="operational-surface"
+              style={{ width: '100%', padding: '0.75rem 1rem' }}
+              disabled={!discoveryReady}
+            >
+              {exportConfig.detectedLocations.map(location => (
+                <option key={location} value={location}>{location}</option>
+              ))}
+              {!exportConfig.detectedLocations.includes(selectedLocation) && selectedLocation && (
+                <option value={selectedLocation}>{selectedLocation}</option>
+              )}
+            </select>
+          ) : (
+            <input
+              readOnly
+              value={exportConfig.subscriptionId}
+              className="operational-surface"
+              style={{ width: '100%', padding: '0.75rem 1rem' }}
+            />
+          )}
+        </div>
+
+        <div>
+          <label className="micro-label" style={{ display: 'block', marginBottom: '0.45rem' }}>
+            {isAzure ? 'Webhook URL' : 'Ingest URL'}
+          </label>
+          <input
+            readOnly
+            value={exportConfig.webhookUrl}
+            className="operational-surface"
+            style={{ width: '100%', padding: '0.75rem 1rem' }}
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className="micro-label" style={{ display: 'block', marginBottom: '0.45rem' }}>terraform.tfvars</label>
+        <textarea
+          readOnly
+          value={computedTfvarsText}
+          rows={Math.max(6, computedTfvarsText.split('\n').length + 1)}
+          className="operational-surface"
+          style={{ width: '100%', padding: '0.75rem 1rem', fontFamily: 'var(--font-mono)', resize: 'vertical' }}
+        />
+      </div>
+
+      {!isAzure && discoveryReady && (
+        <div style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>
+          Draco is using detected AWS regions from synced resources for this account.
+        </div>
+      )}
     </div>
   )
 }

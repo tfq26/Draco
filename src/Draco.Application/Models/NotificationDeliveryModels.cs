@@ -17,9 +17,9 @@ public sealed class NotificationDeliveryPreferences
     public bool EmailEnabled { get; init; }
     public string? EmailAddress { get; init; }
     public bool MessagesEnabled { get; init; }
-    public string? MessagesNumber { get; init; }
+    public IReadOnlyList<string> MessagesNumbers { get; init; } = [];
     public bool WhatsAppEnabled { get; init; }
-    public string? WhatsAppNumber { get; init; }
+    public IReadOnlyList<string> WhatsAppNumbers { get; init; } = [];
 }
 
 public static class NotificationDeliveryPreferencesSerializer
@@ -28,24 +28,25 @@ public static class NotificationDeliveryPreferencesSerializer
 
     public static NotificationDeliveryPreferences Resolve(UserAccount account)
     {
-        var stored = Deserialize(account.NotificationPreferencesJson);
-        var normalizedPreferredChannel = NormalizeChannel(account.PreferredChannel);
+        var normalizedPreferredChannels = SplitChannels(account.PreferredChannel);
         var fallbackEmail = NormalizeValue(account.Email);
         var fallbackPhone = NormalizeValue(account.Phone);
+        var smsRecipients = DeserializeRecipients(account.SmsRecipientsJson);
+        var whatsAppRecipients = DeserializeRecipients(account.WhatsAppRecipientsJson);
+        var messagesNumbers = MergeRecipients(smsRecipients, fallbackPhone);
+        var whatsAppNumbers = MergeRecipients(whatsAppRecipients, fallbackPhone);
 
         return new NotificationDeliveryPreferences
         {
-            BrowserEnabled = stored?.BrowserEnabled ?? true,
-            EmailEnabled = stored?.EmailEnabled ?? false,
-            EmailAddress = NormalizeValue(stored?.EmailAddress) ?? fallbackEmail,
-            MessagesEnabled = stored?.MessagesEnabled
-                ?? (string.Equals(normalizedPreferredChannel, NotificationChannelNames.Messages, StringComparison.OrdinalIgnoreCase)
-                    && !string.IsNullOrWhiteSpace(fallbackPhone)),
-            MessagesNumber = NormalizeValue(stored?.MessagesNumber) ?? fallbackPhone,
-            WhatsAppEnabled = stored?.WhatsAppEnabled
-                ?? (string.Equals(normalizedPreferredChannel, NotificationChannelNames.WhatsApp, StringComparison.OrdinalIgnoreCase)
-                    && !string.IsNullOrWhiteSpace(fallbackPhone)),
-            WhatsAppNumber = NormalizeValue(stored?.WhatsAppNumber) ?? fallbackPhone
+            BrowserEnabled = true,
+            EmailEnabled = false,
+            EmailAddress = fallbackEmail,
+            MessagesEnabled = normalizedPreferredChannels.Contains(NotificationChannelNames.Messages)
+                && messagesNumbers.Count > 0,
+            MessagesNumbers = messagesNumbers,
+            WhatsAppEnabled = normalizedPreferredChannels.Contains(NotificationChannelNames.WhatsApp)
+                && whatsAppNumbers.Count > 0,
+            WhatsAppNumbers = whatsAppNumbers
         };
     }
 
@@ -72,14 +73,25 @@ public static class NotificationDeliveryPreferencesSerializer
     private static string? NormalizeValue(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
-    private static string? NormalizeChannel(string? channel)
+    private static HashSet<string> SplitChannels(string? channel)
     {
         if (string.IsNullOrWhiteSpace(channel))
         {
-            return null;
+            return new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                NotificationChannelNames.Messages
+            };
         }
 
-        return channel.Trim().ToUpperInvariant() switch
+        return channel
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(NormalizeChannelName)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeChannelName(string channel) =>
+        channel.Trim().ToUpperInvariant() switch
         {
             "SMS" => NotificationChannelNames.Messages,
             "MESSAGE" => NotificationChannelNames.Messages,
@@ -89,5 +101,45 @@ public static class NotificationDeliveryPreferencesSerializer
             "BROWSER" => NotificationChannelNames.Browser,
             _ => channel.Trim()
         };
+
+    private static List<string> DeserializeRecipients(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return [];
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<List<string>>(json, JsonOptions)?
+                .Select(NormalizeValue)
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Cast<string>()
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList()
+                ?? [];
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    private static IReadOnlyList<string> MergeRecipients(IEnumerable<string> configuredRecipients, string? fallbackRecipient)
+    {
+        var merged = configuredRecipients
+            .Select(NormalizeValue)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Cast<string>()
+            .ToList();
+
+        if (!string.IsNullOrWhiteSpace(fallbackRecipient))
+        {
+            merged.Add(fallbackRecipient);
+        }
+
+        return merged
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 }

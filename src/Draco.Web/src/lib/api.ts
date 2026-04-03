@@ -33,25 +33,11 @@ export interface DracoUser {
   phone?: string
   imageUrl?: string
   preferredChannel?: string
-<<<<<<< HEAD
-  notificationPreferences?: NotificationDeliveryPreferences
-=======
   smsRecipients?: string[]
   whatsAppRecipients?: string[]
->>>>>>> c4bc3d5 (Add multi-recipient Twilio delivery for SMS and WhatsApp)
   isSetupComplete: boolean
   connections: CloudConnection[]
   schedules?: unknown[]
-}
-
-export interface NotificationDeliveryPreferences {
-  browserEnabled: boolean
-  emailEnabled: boolean
-  emailAddress?: string
-  messagesEnabled: boolean
-  messagesNumber?: string
-  whatsAppEnabled: boolean
-  whatsAppNumber?: string
 }
 
 export interface CloudConnection {
@@ -91,6 +77,23 @@ export interface AwsBootstrapResult {
   trustPolicyJson: string
   permissionsPolicyJson: string
   terraformTemplate: string
+}
+
+export interface CloudConnectionEventingExport {
+  provider: string
+  connectionId: number
+  displayName?: string
+  subscriptionId: string
+  webhookUrl: string
+  variables: Record<string, string>
+  tfvarsText: string
+  templatePath: string
+  detectedLocations: string[]
+  defaultLocation: string
+  detectedResourceGroups: string[]
+  defaultResourceGroup?: string
+  discoveryReady: boolean
+  discoveryMessage: string
 }
 
 export interface InsightOverview {
@@ -665,6 +668,8 @@ export const dracoApi = {
   },
   cloudConnections: {
     list: () => fetchWithAuth<CloudConnection[]>('/api/cloud-connections'),
+    getEventingExport: (id: number) =>
+      fetchWithAuth<CloudConnectionEventingExport>(`/api/cloud-connections/${id}/eventing-export`),
     getAwsBootstrap: (accountId: string, roleName?: string) =>
       fetchWithAuth<AwsBootstrapResult>(
         `/api/cloud-connections/aws/bootstrap?accountId=${encodeURIComponent(accountId)}${roleName ? `&roleName=${encodeURIComponent(roleName)}` : ''}`,
@@ -701,12 +706,6 @@ export const dracoApi = {
   },
   notifications: {
     getAll: () => fetchWithAuth<any[]>('/api/notifications'),
-    getPreferences: () => fetchWithAuth<NotificationDeliveryPreferences>('/api/notifications/preferences'),
-    updatePreferences: (data: NotificationDeliveryPreferences) =>
-      fetchWithAuth<NotificationDeliveryPreferences>('/api/notifications/preferences', {
-        method: 'PATCH',
-        body: JSON.stringify(data),
-      }),
     markAsRead: (id: number) => fetchWithAuth(`/api/notifications/${id}/read`, { method: 'PATCH' }),
     clearAll: () => fetchWithAuth('/api/notifications/clear-all', { method: 'POST' }),
     createTest: () => fetchWithAuth('/api/notifications/test', { method: 'POST' }),

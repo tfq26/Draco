@@ -4,5 +4,5 @@ namespace Draco.Application.Interfaces;
 
 public interface INotificationDeliveryService
 {
-    Task DeliverAsync(UserAccount user, SystemNotification notification, CancellationToken cancellationToken = default);
+    Task<bool> DeliverAsync(UserAccount user, SystemNotification notification, CancellationToken cancellationToken = default);
 }

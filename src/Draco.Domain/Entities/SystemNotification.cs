@@ -13,6 +13,7 @@ public class SystemNotification
     public string Severity { get; set; } = "Info";
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? LastEvaluatedAt { get; set; }
+    public DateTime? LastDeliveredAt { get; set; }
     public DateTime? ResolvedAt { get; set; }
     public bool IsRead { get; set; }
     public string? ResourceUrl { get; set; }

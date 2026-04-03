@@ -537,27 +537,23 @@ function Resources() {
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search assets..."
-              style={{ background: 'transparent', border: 'none', color: 'white', outline: 'none', fontSize: '0.8125rem', width: '100%' }}
+              style={{ background: 'transparent', border: 'none', color: 'var(--foreground)', outline: 'none', fontSize: '0.8125rem', width: '100%', fontFamily: 'Roboto, sans-serif', }}
             />
           </div>
         </div>
       </div>
 
-      {(syncMutation.isError || syncMutation.isSuccess) && (
+      {syncMutation.isError && (
         <div
           className="premium-glass"
           style={{
             padding: '0.85rem 1rem',
             marginBottom: '1rem',
-            borderLeft: `4px solid ${syncMutation.isError ? '#f87171' : '#34d399'}`,
+            borderLeft: '4px solid #f87171',
           }}
         >
-          <div style={{ fontSize: '0.78rem', color: syncMutation.isError ? '#fecaca' : 'var(--muted-foreground)' }}>
-            {syncMutation.isError
-              ? (syncMutation.error as Error).message
-              : syncMutation.data?.mode === 'manual'
-                ? 'Resource inventory and billing telemetry refreshed from the cloud provider. Draco will keep auto-refreshing this page while it stays open.'
-                : 'Draco automatically refreshed resource inventory and billing telemetry from the cloud provider.'}
+          <div style={{ fontSize: '0.78rem', color: '#fecaca' }}>
+            {(syncMutation.error as Error).message}
           </div>
         </div>
       )}

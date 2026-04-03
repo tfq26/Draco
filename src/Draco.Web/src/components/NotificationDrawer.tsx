@@ -4,11 +4,20 @@ import { dracoApi } from '../lib/api'
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerTrigger, DrawerFooter, DrawerClose } from './ui/drawer'
 import { useNavigate } from '@tanstack/react-router'
 
+type NotificationItem = {
+  id: number
+  title: string
+  message: string
+  createdAt: string
+  isRead: boolean
+  resourceUrl?: string
+}
+
 export function NotificationDrawer() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
 
-  const { data: notifications = [] } = useQuery({
+  const { data: notifications = [] } = useQuery<NotificationItem[]>({
     queryKey: ['notifications'],
     queryFn: dracoApi.notifications.getAll,
     refetchInterval: 30000, // Sync every 30s
@@ -16,12 +25,43 @@ export function NotificationDrawer() {
 
   const markAsRead = useMutation({
     mutationFn: (id: number) => dracoApi.notifications.markAsRead(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notifications'] }),
+    onMutate: async (id: number) => {
+      await queryClient.cancelQueries({ queryKey: ['notifications'] })
+      const previousNotifications = queryClient.getQueryData<NotificationItem[]>(['notifications']) ?? []
+
+      queryClient.setQueryData<NotificationItem[]>(
+        ['notifications'],
+        previousNotifications.map(notification =>
+          notification.id === id
+            ? { ...notification, isRead: true }
+            : notification,
+        ),
+      )
+
+      return { previousNotifications }
+    },
+    onError: (_error, _id, context) => {
+      if (context?.previousNotifications) {
+        queryClient.setQueryData(['notifications'], context.previousNotifications)
+      }
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['notifications'] }),
   })
 
   const clearAll = useMutation({
     mutationFn: dracoApi.notifications.clearAll,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notifications'] }),
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: ['notifications'] })
+      const previousNotifications = queryClient.getQueryData<NotificationItem[]>(['notifications']) ?? []
+      queryClient.setQueryData<NotificationItem[]>(['notifications'], [])
+      return { previousNotifications }
+    },
+    onError: (_error, _variables, context) => {
+      if (context?.previousNotifications) {
+        queryClient.setQueryData(['notifications'], context.previousNotifications)
+      }
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['notifications'] }),
   })
 
   const unreadCount = notifications.filter(n => !n.isRead).length
@@ -90,11 +130,13 @@ export function NotificationDrawer() {
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              {notifications.map((n: any) => (
+              {notifications.map((n) => (
                 <div 
                   key={n.id} 
                   onClick={() => {
-                    markAsRead.mutate(n.id)
+                    if (!n.isRead) {
+                      markAsRead.mutate(n.id)
+                    }
                     if (n.resourceUrl) window.location.href = n.resourceUrl
                   }}
                   className="operational-surface"

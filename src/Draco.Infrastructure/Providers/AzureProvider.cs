@@ -536,10 +536,16 @@ public class AzureProvider : ICloudProvider
             var value when value.Contains("microsoft.compute/virtualmachines", StringComparison.Ordinal) => 120m,
             var value when value.Contains("microsoft.sql/servers/databases", StringComparison.Ordinal) => 95m,
             var value when value.Contains("microsoft.containerservice/managedclusters", StringComparison.Ordinal) => 220m,
-            var value when value.Contains("microsoft.storage/storageaccounts", StringComparison.Ordinal) => 18m,
-            var value when value.Contains("microsoft.web/sites", StringComparison.Ordinal) => 35m,
-            var value when value.Contains("microsoft.network/loadbalancers", StringComparison.Ordinal) => 28m,
-            _ => 12m,
+            var value when value.Contains("microsoft.storage/storageaccounts", StringComparison.Ordinal) => 2m,
+            var value when value.Contains("microsoft.web/sites", StringComparison.Ordinal) => 15m,
+            var value when value.Contains("microsoft.network/loadbalancers", StringComparison.Ordinal) => 18m,
+            var value when value.Contains("microsoft.documentdb/databaseaccounts", StringComparison.Ordinal) => 25m,
+            var value when value.Contains("microsoft.dbformysql/flexibleservers", StringComparison.Ordinal) => 35m,
+            var value when value.Contains("microsoft.machinelearningservices/workspaces", StringComparison.Ordinal) => 0m,
+            var value when value.Contains("microsoft.operationalinsights/workspaces", StringComparison.Ordinal) => 0m,
+            var value when value.Contains("microsoft.keyvault/vaults", StringComparison.Ordinal) => 0m,
+            var value when value.Contains("microsoft.insights/components", StringComparison.Ordinal) => 0m,
+            _ => 0m,
         };
 
         return Task.FromResult(estimate);

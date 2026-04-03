@@ -182,8 +182,39 @@ public static class EventWorkflowEndpoints
         if (!string.IsNullOrWhiteSpace(request.Email))
         {
             var normalizedEmail = request.Email.Trim().ToLowerInvariant();
-            return await dbContext.UserAccounts
+            var byEmail = await dbContext.UserAccounts
                 .FirstOrDefaultAsync(user => user.Email == normalizedEmail, cancellationToken);
+            if (byEmail is not null)
+            {
+                return byEmail;
+            }
+        }
+
+        var normalizedProvider = string.IsNullOrWhiteSpace(request.Provider)
+            ? null
+            : AuthEndpoints.NormalizeProvider(request.Provider);
+        var normalizedSubscriptionId = string.IsNullOrWhiteSpace(request.SubscriptionId)
+            ? null
+            : request.SubscriptionId.Trim();
+
+        if (!string.IsNullOrWhiteSpace(normalizedProvider) && !string.IsNullOrWhiteSpace(normalizedSubscriptionId))
+        {
+            var matchingUsers = await dbContext.CloudConnections
+                .AsNoTracking()
+                .Include(connection => connection.User)
+                .Where(connection =>
+                    connection.IsActive &&
+                    connection.Provider == normalizedProvider &&
+                    connection.SubscriptionId == normalizedSubscriptionId &&
+                    connection.User != null)
+                .Select(connection => connection.User!)
+                .Distinct()
+                .ToListAsync(cancellationToken);
+
+            if (matchingUsers.Count == 1)
+            {
+                return matchingUsers[0];
+            }
         }
 
         return null;

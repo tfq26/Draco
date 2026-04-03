@@ -26,25 +26,29 @@ public class NotificationDeliveryService : INotificationDeliveryService
         _logger = logger;
     }
 
-    public async Task DeliverAsync(UserAccount user, SystemNotification notification, CancellationToken cancellationToken = default)
+    public async Task<bool> DeliverAsync(UserAccount user, SystemNotification notification, CancellationToken cancellationToken = default)
     {
         var preferences = NotificationDeliveryPreferencesSerializer.Resolve(user);
+        var delivered = false;
 
         if (preferences.MessagesEnabled)
         {
-            if (string.IsNullOrWhiteSpace(preferences.MessagesNumber))
+            if (preferences.MessagesNumbers.Count == 0)
             {
                 _logger.LogWarning(
-                    "Messages delivery skipped for user {UserId} because no destination number is configured.",
+                    "Messages delivery skipped for user {UserId} because no destination numbers are configured.",
                     user.Id);
             }
             else
             {
                 var messageBody = await BuildMessagesBodyAsync(user.Id, notification, cancellationToken);
-                await _messagingService.SendMessageAsync(
-                    preferences.MessagesNumber,
-                    messageBody,
-                    cancellationToken);
+                foreach (var recipient in preferences.MessagesNumbers)
+                {
+                    delivered |= await _messagingService.SendMessageAsync(
+                        recipient,
+                        messageBody,
+                        cancellationToken);
+                }
             }
         }
 
@@ -63,26 +67,32 @@ public class NotificationDeliveryService : INotificationDeliveryService
                     BuildEmailSubject(notification),
                     BuildEmailBody(notification),
                     cancellationToken);
+                delivered = true;
             }
         }
 
         if (preferences.WhatsAppEnabled)
         {
-            if (string.IsNullOrWhiteSpace(preferences.WhatsAppNumber))
+            if (preferences.WhatsAppNumbers.Count == 0)
             {
                 _logger.LogWarning(
-                    "WhatsApp delivery skipped for user {UserId} because no destination number is configured.",
+                    "WhatsApp delivery skipped for user {UserId} because no destination numbers are configured.",
                     user.Id);
             }
             else
             {
                 var messageBody = await BuildMessagesBodyAsync(user.Id, notification, cancellationToken);
-                await _messagingService.SendWhatsAppMessageAsync(
-                    preferences.WhatsAppNumber,
-                    messageBody,
-                    cancellationToken);
+                foreach (var recipient in preferences.WhatsAppNumbers)
+                {
+                    delivered |= await _messagingService.SendWhatsAppMessageAsync(
+                        recipient,
+                        messageBody,
+                        cancellationToken);
+                }
             }
         }
+
+        return delivered;
     }
 
     private static string BuildEmailSubject(SystemNotification notification) =>

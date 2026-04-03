@@ -295,12 +295,8 @@ public static class AuthEndpoints
         phone = account.Phone,
         imageUrl = account.ImageUrl,
         preferredChannel = account.PreferredChannel,
-<<<<<<< HEAD
-        notificationPreferences = NotificationDeliveryPreferencesSerializer.Resolve(account),
-=======
         smsRecipients = ParseRecipients(account.SmsRecipientsJson, account.Phone),
         whatsAppRecipients = ParseRecipients(account.WhatsAppRecipientsJson),
->>>>>>> c4bc3d5 (Add multi-recipient Twilio delivery for SMS and WhatsApp)
         isSetupComplete = account.Connections.Any(),
         connections = account.Connections
             .OrderByDescending(connection => connection.LastSyncedAt ?? connection.ConnectedAt)

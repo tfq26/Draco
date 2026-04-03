@@ -1,0 +1,73 @@
+terraform {
+  required_version = ">= 1.6.0"
+
+  required_providers {
+    azurerm = {
+      source  = "hashicorp/azurerm"
+      version = "~> 4.0"
+    }
+  }
+}
+
+provider "azurerm" {
+  features {}
+}
+
+variable "resource_group_name" {
+  type = string
+}
+
+variable "location" {
+  type = string
+}
+
+variable "subscription_id" {
+  type = string
+}
+
+variable "draco_activity_webhook_url" {
+  type        = string
+  description = "Base Draco Azure adapter webhook URL, for example https://api.example.com/api/events/azure/activity-log"
+}
+
+variable "draco_event_ingestion_secret" {
+  type      = string
+  sensitive = true
+}
+
+variable "draco_user_email" {
+  type        = string
+  description = "Draco account email that owns this Azure subscription."
+}
+
+locals {
+  draco_activity_webhook_uri = "${var.draco_activity_webhook_url}?code=${urlencode(var.draco_event_ingestion_secret)}&userEmail=${urlencode(var.draco_user_email)}"
+}
+
+resource "azurerm_monitor_action_group" "draco_activity" {
+  name                = "draco-activity-ag"
+  resource_group_name = var.resource_group_name
+  short_name          = "dracoact"
+
+  webhook_receiver {
+    name                    = "draco-webhook"
+    service_uri             = local.draco_activity_webhook_uri
+    use_common_alert_schema = true
+  }
+}
+
+resource "azurerm_monitor_activity_log_alert" "draco_changes" {
+  name                = "draco-activity-log-alert-${substr(replace(var.subscription_id, "-", ""), 0, 8)}"
+  resource_group_name = var.resource_group_name
+  scopes              = ["/subscriptions/${var.subscription_id}"]
+  description         = "Sends selected Azure activity log changes to Draco for ${var.draco_user_email}."
+
+  criteria {
+    category = "Administrative"
+    level    = "Informational"
+  }
+
+  action {
+    action_group_id = azurerm_monitor_action_group.draco_activity.id
+  }
+}

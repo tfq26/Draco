@@ -1,0 +1,166 @@
+terraform {
+  required_version = ">= 1.6.0"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+    archive = {
+      source  = "hashicorp/archive"
+      version = "~> 2.5"
+    }
+  }
+}
+
+variable "aws_region" {
+  type = string
+}
+
+variable "draco_api_events_ingest_url" {
+  type        = string
+  description = "Full Draco event ingestion URL, for example https://api.example.com/api/events/ingest"
+}
+
+variable "draco_event_ingestion_secret" {
+  type        = string
+  sensitive   = true
+  description = "Must match DRACO_EVENT_INGESTION_SECRET on the Draco API."
+}
+
+variable "draco_user_email" {
+  type        = string
+  description = "Draco account email that owns this AWS account."
+}
+
+provider "aws" {
+  region = var.aws_region
+}
+
+locals {
+  lambda_name = "draco-eventbridge-forwarder"
+  lambda_code = <<-PYTHON
+import hashlib
+import hmac
+import json
+import os
+import time
+import urllib.request
+
+def handler(event, context):
+    resource_id = None
+    resources = event.get("resources") or []
+    if resources:
+        resource_id = resources[0]
+
+    payload = {
+        "source": event.get("source", "aws.eventbridge"),
+        "eventType": event.get("detail-type", "AWS Event"),
+        "category": event.get("source", "AWS"),
+        "severity": "Medium",
+        "email": os.environ.get("DRACO_USER_EMAIL"),
+        "provider": "AWS",
+        "subscriptionId": event.get("account", ""),
+        "resourceId": resource_id,
+        "title": event.get("detail-type", "AWS Event"),
+        "summary": json.dumps(event.get("detail", {}))[:1000],
+        "occurredAt": event.get("time"),
+        "correlationId": event.get("id")
+    }
+
+    raw_body = json.dumps(payload).encode("utf-8")
+    timestamp = str(int(time.time()))
+    secret = os.environ["DRACO_EVENT_INGESTION_SECRET"].encode("utf-8")
+    signature = hmac.new(secret, f"{timestamp}.{raw_body.decode('utf-8')}".encode("utf-8"), hashlib.sha256).hexdigest()
+
+    request = urllib.request.Request(
+        os.environ["DRACO_API_EVENTS_INGEST_URL"],
+        data=raw_body,
+        headers={
+            "Content-Type": "application/json",
+            "x-draco-timestamp": timestamp,
+            "x-draco-signature": signature,
+        },
+        method="POST",
+    )
+
+    with urllib.request.urlopen(request, timeout=10) as response:
+        return {"statusCode": response.status, "body": response.read().decode("utf-8")}
+  PYTHON
+}
+
+resource "local_file" "lambda_source" {
+  filename = "${path.module}/.generated-draco-eventbridge-forwarder.py"
+  content  = local.lambda_code
+}
+
+resource "archive_file" "lambda_zip" {
+  type        = "zip"
+  source_file = local_file.lambda_source.filename
+  output_path = "${path.module}/.generated-draco-eventbridge-forwarder.zip"
+}
+
+resource "aws_iam_role" "lambda" {
+  name = "${local.lambda_name}-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Principal = {
+        Service = "lambda.amazonaws.com"
+      }
+      Action = "sts:AssumeRole"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_basic" {
+  role       = aws_iam_role.lambda.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+}
+
+resource "aws_lambda_function" "forwarder" {
+  function_name    = local.lambda_name
+  role             = aws_iam_role.lambda.arn
+  runtime          = "python3.12"
+  handler          = "index.handler"
+  filename         = archive_file.lambda_zip.output_path
+  source_code_hash = archive_file.lambda_zip.output_base64sha256
+  timeout          = 10
+
+  environment {
+    variables = {
+      DRACO_API_EVENTS_INGEST_URL   = var.draco_api_events_ingest_url
+      DRACO_EVENT_INGESTION_SECRET  = var.draco_event_ingestion_secret
+      DRACO_USER_EMAIL              = var.draco_user_email
+    }
+  }
+}
+
+resource "aws_cloudwatch_event_rule" "draco_changes" {
+  name        = "draco-change-events"
+  description = "Forwards selected AWS change events to Draco for ${var.draco_user_email}."
+
+  event_pattern = jsonencode({
+    source = [
+      "aws.ec2",
+      "aws.rds",
+      "aws.health"
+    ]
+  })
+}
+
+resource "aws_cloudwatch_event_target" "lambda" {
+  rule      = aws_cloudwatch_event_rule.draco_changes.name
+  target_id = "draco-forwarder"
+  arn       = aws_lambda_function.forwarder.arn
+}
+
+resource "aws_lambda_permission" "allow_eventbridge" {
+  statement_id  = "AllowExecutionFromEventBridge"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.forwarder.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.draco_changes.arn
+}

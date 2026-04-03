@@ -13,9 +13,10 @@ public class GeminiAIService : IAIService
     private readonly HttpClient _httpClient;
     private readonly ILogger<GeminiAIService> _logger;
     private readonly string _apiKey;
+    private readonly string _model;
     private readonly string _systemPrompt;
     private readonly IServiceProvider _serviceProvider;
-    private const string ApiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent";
+    private const string ApiBaseUrl = "https://generativelanguage.googleapis.com/v1beta/models";
 
     public GeminiAIService(HttpClient httpClient, ILogger<GeminiAIService> logger, IConfiguration configuration, IServiceProvider serviceProvider)
     {
@@ -23,6 +24,7 @@ public class GeminiAIService : IAIService
         _logger = logger;
         _serviceProvider = serviceProvider;
         _apiKey = configuration["Gemini:ApiKey"] ?? configuration["GOOGLE_GEMINI_API_KEY"] ?? "KEY";
+        _model = configuration["Gemini:Model"] ?? configuration["GOOGLE_GEMINI_MODEL"] ?? "gemini-3-flash-preview";
         _systemPrompt = LoadSystemPrompt();
     }
 
@@ -98,6 +100,18 @@ TASK: Answer the user's question using only the provided infrastructure context.
 The context is pre-computed by Draco's backend and should be treated as the source of truth.
 Do not invent resources, costs, incidents, remediations, or provider details that are not present.
 If the answer is not fully supported by the context, say what is missing and what workflow should run next.
+Default to a short answer: 2-4 sentences for most queries.
+Only provide a longer explanation if the user asks for more depth or if brevity would hide an important caveat.
+Prefer a short paragraph over bullet points unless a list is clearly more readable.
+Avoid repeating the same numbers in multiple formats unless the comparison itself matters.
+When discussing money, keep these categories separate and label them explicitly:
+- actual current spend
+- budget forecast
+- estimated fallback totals
+- snapshot-derived forecast
+Never merge those figures into one number.
+Never claim a storage-cost spike unless the storage resources themselves show non-zero cost or the context explicitly attributes the increase to storage.
+If actual storage costs are zero, say that clearly even if the wider environment has forecasted or estimated cost elsewhere.
 
 USER QUESTION: {query}
 
@@ -132,7 +146,7 @@ RAW DATA:
         };
 
         var content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json");
-        var response = await _httpClient.PostAsync($"{ApiUrl}?key={_apiKey}", content, cancellationToken);
+        var response = await _httpClient.PostAsync($"{ApiBaseUrl}/{_model}:generateContent?key={_apiKey}", content, cancellationToken);
 
         if (!response.IsSuccessStatusCode)
         {
