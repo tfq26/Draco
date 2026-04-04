@@ -6,6 +6,7 @@ import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import dracoBlack from '../assets/draco-black.svg'
 import dracoColored from '../assets/draco-colored.svg'
 import { dracoApi } from '../lib/api'
+import { CLOUD_SYNC_COOLDOWN_MS, isCloudSyncAllowed, recordCloudSyncAttempt } from '../lib/cloudSyncRateLimit'
 import { NotificationDrawer } from '../components/NotificationDrawer'
 import { AssistantWidget } from '../components/AssistantWidget'
 
@@ -14,12 +15,14 @@ export const Route = createRootRoute({
 })
 
 function RootComponent() {
+  const showRouterDevtools = import.meta.env.DEV
   const location = useLocation()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
 
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
   const [showSyncSuccess, setShowSyncSuccess] = useState(false)
+  const [hasAttemptedPageLoadSync, setHasAttemptedPageLoadSync] = useState(false)
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     const saved = localStorage.getItem('draco-theme')
     if (saved) return saved as 'light' | 'dark'
@@ -81,6 +84,22 @@ function RootComponent() {
   })
 
   useEffect(() => {
+    const publicPaths = ['/', '/auth/callback', '/callback', '/aws-onboarding']
+    if (!hasToken || publicPaths.includes(location.pathname) || hasAttemptedPageLoadSync) {
+      return
+    }
+
+    setHasAttemptedPageLoadSync(true)
+
+    if (!isCloudSyncAllowed(CLOUD_SYNC_COOLDOWN_MS)) {
+      return
+    }
+
+    recordCloudSyncAttempt()
+    syncMutation.mutate()
+  }, [hasAttemptedPageLoadSync, hasToken, location.pathname, syncMutation])
+
+  useEffect(() => {
     if (!showSyncSuccess) {
       return
     }
@@ -126,7 +145,10 @@ function RootComponent() {
           <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
             {hasToken && (
               <button 
-                onClick={() => syncMutation.mutate()}
+                onClick={() => {
+                  recordCloudSyncAttempt()
+                  syncMutation.mutate()
+                }}
                 disabled={syncMutation.isPending}
                 className="btn-secondary" 
                 style={{ 
@@ -287,7 +309,7 @@ function RootComponent() {
         </main>
       </div>
       {hasToken && <AssistantWidget />}
-      <TanStackRouterDevtools />
+      {showRouterDevtools ? <TanStackRouterDevtools /> : null}
     </>
   )
 }

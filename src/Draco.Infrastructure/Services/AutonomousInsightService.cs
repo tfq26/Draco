@@ -4,6 +4,7 @@ using Draco.Application.Models;
 using Draco.Domain.Entities;
 using Draco.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 
 namespace Draco.Infrastructure.Services;
@@ -19,6 +20,8 @@ public sealed class AutonomousInsightService : IAutonomousInsightService
     private readonly IInsightContextService _insightContextService;
     private readonly IAIService _aiService;
     private readonly IResourceActionService _resourceActionService;
+    private readonly ICloudConnectionSyncService _cloudConnectionSyncService;
+    private readonly IMemoryCache _memoryCache;
     private readonly ILogger<AutonomousInsightService> _logger;
 
     public AutonomousInsightService(
@@ -26,30 +29,35 @@ public sealed class AutonomousInsightService : IAutonomousInsightService
         IInsightContextService insightContextService,
         IAIService aiService,
         IResourceActionService resourceActionService,
+        ICloudConnectionSyncService cloudConnectionSyncService,
+        IMemoryCache memoryCache,
         ILogger<AutonomousInsightService> logger)
     {
         _dbContext = dbContext;
         _insightContextService = insightContextService;
         _aiService = aiService;
         _resourceActionService = resourceActionService;
+        _cloudConnectionSyncService = cloudConnectionSyncService;
+        _memoryCache = memoryCache;
         _logger = logger;
     }
 
     public async Task<AutonomousInsightResponse?> AnswerUserQueryAsync(Guid userId, string query, CancellationToken cancellationToken = default)
     {
         var trimmedQuery = query.Trim();
-        var context = await _insightContextService.BuildForUserAsync(userId, cancellationToken);
-        if (context is null)
-        {
-            return null;
-        }
-
         var user = await _dbContext.UserAccounts
-            .AsNoTracking()
             .Include(account => account.Connections)
             .FirstOrDefaultAsync(account => account.Id == userId, cancellationToken);
 
         if (user is null)
+        {
+            return null;
+        }
+
+        await EnsureFreshInsightDataAsync(user, trimmedQuery, cancellationToken);
+
+        var context = await _insightContextService.BuildForUserAsync(userId, cancellationToken);
+        if (context is null)
         {
             return null;
         }
@@ -222,6 +230,57 @@ For cost questions, explain the difference between actual spend, budget forecast
             SuggestedWorkflows = workflowProposals,
             Narrative = narrative
         };
+    }
+
+    private async Task EnsureFreshInsightDataAsync(
+        UserAccount user,
+        string query,
+        CancellationToken cancellationToken)
+    {
+        if (!ShouldRefreshBeforeAnswering(query) || user.Connections.Count == 0)
+        {
+            return;
+        }
+
+        var cacheKey = $"ai-freshness:{user.Id}";
+        if (_memoryCache.TryGetValue<DateTimeOffset>(cacheKey, out var lastRefreshAt) &&
+            lastRefreshAt >= DateTimeOffset.UtcNow.AddMinutes(-30))
+        {
+            return;
+        }
+
+        try
+        {
+            await _cloudConnectionSyncService.SyncUserConnectionsAsync(user, cancellationToken: cancellationToken);
+            _memoryCache.Set(cacheKey, DateTimeOffset.UtcNow, TimeSpan.FromMinutes(30));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "AI-triggered freshness sync failed for user {UserId}", user.Id);
+        }
+    }
+
+    private static bool ShouldRefreshBeforeAnswering(string query)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return false;
+        }
+
+        return ContainsAny(
+            query,
+            "latest",
+            "current",
+            "right now",
+            "now",
+            "status",
+            "how are",
+            "how is",
+            "what's new",
+            "whats new",
+            "updated",
+            "update",
+            "today");
     }
 
     private async Task<IReadOnlyList<AutonomousActionProposal>> BuildActionProposalsAsync(

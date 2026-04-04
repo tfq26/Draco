@@ -2,6 +2,7 @@ import { createRoute } from '@tanstack/react-router'
 import { Route as rootRoute } from './__root'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { dracoApi, formatCurrencyAmount, getCostSourceColor, getCostSourceLabel, type ResourceActionDefinition, type ResourceActionExecutionResult } from '../lib/api'
+import { CLOUD_SYNC_COOLDOWN_MS, isCloudSyncAllowed, recordCloudSyncAttempt } from '../lib/cloudSyncRateLimit'
 import { useEffect, useMemo, useState } from 'react'
 import { Activity, ArrowUpDown, Box, ChevronDown, ChevronUp, Database, Pause, Play, ReceiptText, RotateCcw, Search, Server, ShieldCheck, Sparkles, Trash2 } from 'lucide-react'
 import {
@@ -38,7 +39,7 @@ export const ResourcesRoute = createRoute({
 function Resources() {
   const sentinelSearch = ResourcesRoute.useSearch()
   const navigate = useNavigate()
-  const AUTO_SYNC_INTERVAL_MS = 120000
+  const AUTO_SYNC_INTERVAL_MS = CLOUD_SYNC_COOLDOWN_MS
   const [search, setSearch] = useState(sentinelSearch.search || '')
   const [selectedResourceId, setSelectedResourceId] = useState<string | null>(null)
   const [selectedGroupKey, setSelectedGroupKey] = useState<string | null>(sentinelSearch.resourceGroup ? `*::*::${sentinelSearch.resourceGroup}` : null)
@@ -320,6 +321,11 @@ function Resources() {
     }
 
     setHasInitializedAutoSync(true)
+    if (!isCloudSyncAllowed(AUTO_SYNC_INTERVAL_MS)) {
+      return
+    }
+
+    recordCloudSyncAttempt()
     syncMutation.mutate('auto')
   }, [connections, hasInitializedAutoSync, syncMutation])
 
@@ -330,7 +336,8 @@ function Resources() {
     }
 
     const intervalId = window.setInterval(() => {
-      if (!syncMutation.isPending) {
+      if (!syncMutation.isPending && isCloudSyncAllowed(AUTO_SYNC_INTERVAL_MS)) {
+        recordCloudSyncAttempt()
         syncMutation.mutate('auto')
       }
     }, AUTO_SYNC_INTERVAL_MS)

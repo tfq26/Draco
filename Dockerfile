@@ -21,6 +21,25 @@ RUN dotnet publish "Draco.Api.csproj" -c Release -o /app/publish /p:UseAppHost=f
 # 2. Runtime Phase
 FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS runtime
 WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl unzip ca-certificates \
+    && arch="$(dpkg --print-architecture)" \
+    && case "$arch" in \
+        amd64) terraform_arch="amd64" ;; \
+        arm64) terraform_arch="arm64" ;; \
+        *) echo "Unsupported architecture: $arch" && exit 1 ;; \
+       esac \
+    && curl -fsSL "https://releases.hashicorp.com/terraform/1.8.5/terraform_1.8.5_linux_${terraform_arch}.zip" -o /tmp/terraform.zip \
+    && unzip /tmp/terraform.zip -d /usr/local/bin \
+    && chmod +x /usr/local/bin/terraform \
+    && mkdir -p /tmp/draco-terraform-actions \
+    && rm -f /tmp/terraform.zip \
+    && apt-get purge -y --auto-remove unzip curl \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV DRACO_TERRAFORM_WORKSPACE_ROOT=/tmp/draco-terraform-actions
+
 COPY --from=build /app/publish .
 
 # Railway provides the PORT environment variable dynamically at runtime.

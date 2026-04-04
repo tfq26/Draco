@@ -47,6 +47,7 @@ builder.Services.AddScoped<ICloudProvider, AWSProvider>();
 builder.Services.AddScoped<IMessagingService, TwilioMessagingService>();
 builder.Services.AddScoped<IEmailService, SendGridService>();
 builder.Services.AddScoped<INotificationDeliveryService, NotificationDeliveryService>();
+builder.Services.AddScoped<ICloudConnectionSyncService, CloudConnectionSyncService>();
 builder.Services.AddScoped<IGitProvider, GitHubProvider>();
 builder.Services.AddScoped<AlertOrchestrator>();
 builder.Services.AddScoped<ResourceDiscoveryService>();

@@ -19,6 +19,7 @@ namespace Draco.Infrastructure.Services;
 public sealed class TerraformResourceActionService : IResourceActionService
 {
     private const string AzureManagementScope = "https://management.azure.com/user_impersonation offline_access openid profile email";
+    private const string TerraformWorkspaceRootConfigKey = "DRACO_TERRAFORM_WORKSPACE_ROOT";
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -30,6 +31,7 @@ public sealed class TerraformResourceActionService : IResourceActionService
     private readonly DracoDbContext _dbContext;
     private readonly IConfiguration _configuration;
     private readonly ILogger<TerraformResourceActionService> _logger;
+    private readonly string _terraformExecutablePath;
 
     public TerraformResourceActionService(
         DracoDbContext dbContext,
@@ -39,6 +41,7 @@ public sealed class TerraformResourceActionService : IResourceActionService
         _dbContext = dbContext;
         _configuration = configuration;
         _logger = logger;
+        _terraformExecutablePath = ResolveTerraformExecutablePath();
     }
 
     public Task<IReadOnlyList<ResourceActionDefinition>> GetSupportedActionsAsync(
@@ -109,10 +112,10 @@ public sealed class TerraformResourceActionService : IResourceActionService
         _dbContext.RemediationAudits.Add(audit);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        var workspacePath = Path.Combine(
-            Path.GetTempPath(),
-            "draco-terraform-actions",
-            audit.Id.ToString("N"));
+        var workspaceRoot = ResolveTerraformWorkspaceRoot();
+        Directory.CreateDirectory(workspaceRoot);
+
+        var workspacePath = Path.Combine(workspaceRoot, audit.Id.ToString("N"));
 
         Directory.CreateDirectory(workspacePath);
 
@@ -390,9 +393,11 @@ public sealed class TerraformResourceActionService : IResourceActionService
         CancellationToken cancellationToken)
     {
         using var process = new Process();
+        Directory.CreateDirectory(workingDirectory);
+
         process.StartInfo = new ProcessStartInfo
         {
-            FileName = "terraform",
+            FileName = _terraformExecutablePath,
             Arguments = arguments,
             WorkingDirectory = workingDirectory,
             RedirectStandardOutput = true,
@@ -448,6 +453,34 @@ public sealed class TerraformResourceActionService : IResourceActionService
         }
 
         return result;
+    }
+
+    private string ResolveTerraformWorkspaceRoot()
+    {
+        var configuredRoot = _configuration[TerraformWorkspaceRootConfigKey];
+        var workspaceRoot = !string.IsNullOrWhiteSpace(configuredRoot)
+            ? configuredRoot.Trim()
+            : Path.Combine(Path.GetTempPath(), "draco-terraform-actions");
+
+        return workspaceRoot;
+    }
+
+    private static string ResolveTerraformExecutablePath()
+    {
+        var pathEnvironmentVariable = Environment.GetEnvironmentVariable("PATH");
+        var pathSegments = (pathEnvironmentVariable ?? string.Empty)
+            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        foreach (var directory in pathSegments)
+        {
+            var candidate = Path.Combine(directory, "terraform");
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return "terraform";
     }
 
     private async Task<AzureLongRunningOperationResult?> WaitForAzureLongRunningOperationAsync(
