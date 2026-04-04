@@ -35,7 +35,7 @@ RUN apt-get update \
     && chmod +x /usr/local/bin/terraform \
     && mkdir -p /tmp/draco-terraform-actions \
     && rm -f /tmp/terraform.zip \
-    && apt-get purge -y --auto-remove unzip curl \
+    && apt-get purge -y --auto-remove unzip \
     && rm -rf /var/lib/apt/lists/*
 
 ENV DRACO_TERRAFORM_WORKSPACE_ROOT=/tmp/draco-terraform-actions
