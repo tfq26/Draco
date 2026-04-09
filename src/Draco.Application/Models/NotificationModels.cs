@@ -77,6 +77,7 @@ public sealed class NotificationEvaluationContext
     public IReadOnlyList<CloudResource> Resources { get; init; } = [];
     public IReadOnlyList<CloudResourceCost> ResourceCosts { get; init; } = [];
     public IReadOnlyList<CostBudget> Budgets { get; init; } = [];
+    public IReadOnlyList<CostRecommendation> Recommendations { get; init; } = [];
     public IReadOnlyList<ObservabilityMetric> Metrics { get; init; } = [];
     public IReadOnlyDictionary<string, decimal> CurrentSpendByScope { get; init; } = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
     public DateTimeOffset EvaluatedAt { get; init; } = DateTimeOffset.UtcNow;

@@ -1,6 +1,6 @@
 import { createRootRoute, Link, Outlet, useLocation, useNavigate } from '@tanstack/react-router'
 import { TanStackRouterDevtools } from '@tanstack/router-devtools'
-import { Sun, Moon, Settings, LogOut, ChevronDown, RefreshCcw, Check } from 'lucide-react'
+import { Sun, Moon, Settings, LogOut, ChevronDown, RefreshCcw, Check, LayoutDashboard, Boxes, Shield } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import dracoBlack from '../assets/draco-black.svg'
@@ -9,6 +9,7 @@ import { dracoApi } from '../lib/api'
 import { CLOUD_SYNC_COOLDOWN_MS, isCloudSyncAllowed, recordCloudSyncAttempt } from '../lib/cloudSyncRateLimit'
 import { NotificationDrawer } from '../components/NotificationDrawer'
 import { AssistantWidget } from '../components/AssistantWidget'
+import { useIsMobile } from '../hooks/useIsMobile'
 
 export const Route = createRootRoute({
   component: RootComponent,
@@ -19,6 +20,7 @@ function RootComponent() {
   const location = useLocation()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const isMobile = useIsMobile()
 
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
   const [showSyncSuccess, setShowSyncSuccess] = useState(false)
@@ -113,10 +115,10 @@ function RootComponent() {
       <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
         <div className="page-bg-gradient" />
         <nav style={{
-          height: '48px',
+          minHeight: isMobile ? '56px' : '48px',
           display: 'flex',
           alignItems: 'center',
-          padding: '0 1.5rem',
+          padding: isMobile ? '0.65rem 0.9rem' : '0 1.5rem',
           justifyContent: 'space-between',
           borderBottom: '1px solid var(--border)',
           background: 'var(--background)',
@@ -125,16 +127,16 @@ function RootComponent() {
           zIndex: 100,
           backdropFilter: 'blur(8px)'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '2rem' }}>
-            <Link to="/" style={{ textDecoration: 'none', color: 'var(--foreground)', display: 'flex', alignItems: 'center', gap: '0.75rem', fontWeight: 800, fontSize: '1rem', letterSpacing: '-0.02em' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '0.75rem' : '2rem', minWidth: 0 }}>
+            <Link to="/" style={{ textDecoration: 'none', color: 'var(--foreground)', display: 'flex', alignItems: 'center', gap: '0.75rem', fontWeight: 800, fontSize: isMobile ? '0.9rem' : '1rem', letterSpacing: '-0.02em', minWidth: 0 }}>
               <img 
                 src={theme === 'light' ? dracoBlack : dracoColored} 
                 alt="Draco" 
                 style={{ height: '24px', width: 'auto' }} 
               />
-              DRACO
+              {!isMobile && 'DRACO'}
             </Link>
-            {hasToken && (
+            {hasToken && !isMobile && (
               <div style={{ display: 'flex', gap: '1rem' }}>
                 <Link to="/dashboard" className="nav-link" activeProps={{ style: { color: 'var(--primary)', fontWeight: 600 } }}>Dashboard</Link>
                 <Link to="/resources" className="nav-link" activeProps={{ style: { color: 'var(--primary)', fontWeight: 600 } }}>Resources</Link>
@@ -142,7 +144,7 @@ function RootComponent() {
               </div>
             )}
           </div>
-          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: isMobile ? '0.45rem' : '1rem', alignItems: 'center', flexShrink: 0 }}>
             {hasToken && (
               <button 
                 onClick={() => {
@@ -154,7 +156,7 @@ function RootComponent() {
                 style={{ 
                   minWidth: '32px', 
                   height: '32px', 
-                  padding: showSyncSuccess ? '0 0.45rem' : 0, 
+                  padding: showSyncSuccess && !isMobile ? '0 0.45rem' : 0, 
                   display: 'flex', 
                   alignItems: 'center', 
                   justifyContent: 'center',
@@ -164,7 +166,7 @@ function RootComponent() {
                 }}
                 title="Universal Cloud Sync"
               >
-                {showSyncSuccess && !syncMutation.isPending && <Check size={13} color="#34d399" />}
+                {showSyncSuccess && !syncMutation.isPending && !isMobile && <Check size={13} color="#34d399" />}
                 <RefreshCcw size={16} className={syncMutation.isPending ? 'animate-spin' : ''} />
               </button>
             )}
@@ -239,7 +241,7 @@ function RootComponent() {
                     position: 'absolute',
                     top: 'calc(100% + 8px)',
                     right: 0,
-                    width: '180px',
+                    width: isMobile ? '200px' : '180px',
                     background: 'var(--card)',
                     border: '1px solid var(--border)',
                     borderRadius: 'var(--radius-lg)',
@@ -304,10 +306,30 @@ function RootComponent() {
           </div>
         </nav>
 
-        <main style={{ flex: 1, padding: '2rem 3rem', maxWidth: '1400px', margin: '0 auto', width: '100%' }}>
+        <main style={{ flex: 1, padding: isMobile ? '1rem 1rem 5.75rem' : '2rem 3rem', maxWidth: '1400px', margin: '0 auto', width: '100%' }}>
           <Outlet />
         </main>
       </div>
+      {hasToken && isMobile && (
+        <div className="mobile-nav-shell">
+          <Link to="/dashboard" className="mobile-nav-item" activeProps={{ className: 'mobile-nav-item mobile-nav-item-active' }}>
+            <LayoutDashboard size={18} />
+            <span>Dashboard</span>
+          </Link>
+          <Link to="/resources" className="mobile-nav-item" activeProps={{ className: 'mobile-nav-item mobile-nav-item-active' }}>
+            <Boxes size={18} />
+            <span>Resources</span>
+          </Link>
+          <Link to="/governance" className="mobile-nav-item" activeProps={{ className: 'mobile-nav-item mobile-nav-item-active' }}>
+            <Shield size={18} />
+            <span>Governance</span>
+          </Link>
+          <Link to="/settings" className="mobile-nav-item" activeProps={{ className: 'mobile-nav-item mobile-nav-item-active' }}>
+            <Settings size={18} />
+            <span>Settings</span>
+          </Link>
+        </div>
+      )}
       {hasToken && <AssistantWidget />}
       {showRouterDevtools ? <TanStackRouterDevtools /> : null}
     </>

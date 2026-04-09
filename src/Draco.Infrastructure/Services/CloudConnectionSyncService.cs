@@ -234,30 +234,63 @@ public sealed class CloudConnectionSyncService : ICloudConnectionSyncService
                         resources,
                         accessToken,
                         cancellationToken))
+                    .ToList();
+                var resourceMap = resources.ToDictionary(resource => resource.Id, StringComparer.OrdinalIgnoreCase);
+
+                foreach (var actualCost in actualResourceCosts)
+                {
+                    actualCost.UserId = user.Id;
+                    actualCost.Provider = connection.Provider;
+                    actualCost.SubscriptionId = string.IsNullOrWhiteSpace(actualCost.SubscriptionId)
+                        ? connection.SubscriptionId
+                        : actualCost.SubscriptionId;
+                    actualCost.ResourceGroupName = string.IsNullOrWhiteSpace(actualCost.ResourceGroupName)
+                        ? resourceMap.GetValueOrDefault(actualCost.ResourceId)?.ResourceGroupName ?? string.Empty
+                        : actualCost.ResourceGroupName;
+                    actualCost.CapturedAt = DateTimeOffset.UtcNow;
+                    actualCost.RawData ??= JsonSerializer.Serialize(new
+                    {
+                        source = "provider-actual-sync",
+                        resourceType = resourceMap.GetValueOrDefault(actualCost.ResourceId)?.Type,
+                        location = resourceMap.GetValueOrDefault(actualCost.ResourceId)?.Location,
+                        periodStart = actualCost.PeriodStart
+                    });
+                }
+
+                var actualPeriods = actualResourceCosts
+                    .Select(cost => cost.PeriodStart)
+                    .Distinct()
+                    .ToList();
+
+                if (actualPeriods.Count > 0)
+                {
+                    var existingActualResourceCosts = await _dbContext.CloudResourceCosts
+                        .Where(cost =>
+                            cost.UserId == user.Id &&
+                            cost.Provider == connection.Provider &&
+                            cost.SubscriptionId == connection.SubscriptionId &&
+                            cost.Granularity == "Monthly" &&
+                            actualPeriods.Contains(cost.PeriodStart) &&
+                            (cost.CostSource == "AzureActual" || cost.CostSource == "AwsActual"))
+                        .ToListAsync(cancellationToken);
+
+                    if (existingActualResourceCosts.Count > 0)
+                    {
+                        _dbContext.CloudResourceCosts.RemoveRange(existingActualResourceCosts);
+                    }
+
+                    _dbContext.CloudResourceCosts.AddRange(actualResourceCosts);
+                }
+
+                var currentPeriodActualResourceCosts = actualResourceCosts
+                    .Where(cost => cost.PeriodStart == periodStart)
                     .ToDictionary(cost => cost.ResourceId, StringComparer.OrdinalIgnoreCase);
 
-                var resourceCosts = new List<CloudResourceCost>(resources.Count);
+                var currentPeriodEstimatedCosts = new List<CloudResourceCost>(resources.Count);
                 foreach (var resource in resources)
                 {
-                    if (actualResourceCosts.TryGetValue(resource.Id, out var actualCost))
+                    if (currentPeriodActualResourceCosts.ContainsKey(resource.Id))
                     {
-                        actualCost.UserId = user.Id;
-                        actualCost.Provider = connection.Provider;
-                        actualCost.SubscriptionId = resource.SubscriptionId;
-                        actualCost.ResourceGroupName = string.IsNullOrWhiteSpace(actualCost.ResourceGroupName)
-                            ? resource.ResourceGroupName
-                            : actualCost.ResourceGroupName;
-                        actualCost.PeriodStart = periodStart;
-                        actualCost.PeriodEnd = DateTimeOffset.UtcNow;
-                        actualCost.CapturedAt = DateTimeOffset.UtcNow;
-                        actualCost.RawData ??= JsonSerializer.Serialize(new
-                        {
-                            source = "provider-actual-sync",
-                            resourceType = resource.Type,
-                            location = resource.Location
-                        });
-
-                        resourceCosts.Add(actualCost);
                         continue;
                     }
 
@@ -268,7 +301,7 @@ public sealed class CloudConnectionSyncService : ICloudConnectionSyncService
                         accessToken,
                         cancellationToken);
 
-                    resourceCosts.Add(new CloudResourceCost
+                    currentPeriodEstimatedCosts.Add(new CloudResourceCost
                     {
                         UserId = user.Id,
                         ResourceId = resource.Id,
@@ -318,28 +351,33 @@ public sealed class CloudConnectionSyncService : ICloudConnectionSyncService
                     _dbContext.CostRecommendations.AddRange(recommendations);
                 }
 
-                var existingResourceCosts = await _dbContext.CloudResourceCosts
+                var existingCurrentEstimatedCosts = await _dbContext.CloudResourceCosts
                     .Where(cost =>
                         cost.UserId == user.Id &&
                         cost.Provider == connection.Provider &&
                         cost.SubscriptionId == connection.SubscriptionId &&
                         cost.Granularity == "Monthly" &&
-                        cost.PeriodStart == periodStart)
+                        cost.PeriodStart == periodStart &&
+                        cost.CostSource == "Estimated")
                     .ToListAsync(cancellationToken);
 
-                if (existingResourceCosts.Count > 0)
+                if (existingCurrentEstimatedCosts.Count > 0)
                 {
-                    _dbContext.CloudResourceCosts.RemoveRange(existingResourceCosts);
+                    _dbContext.CloudResourceCosts.RemoveRange(existingCurrentEstimatedCosts);
                 }
 
-                if (resourceCosts.Count > 0)
+                if (currentPeriodEstimatedCosts.Count > 0)
                 {
-                    _dbContext.CloudResourceCosts.AddRange(resourceCosts);
+                    _dbContext.CloudResourceCosts.AddRange(currentPeriodEstimatedCosts);
                 }
 
-                var preferredSnapshotCosts = resourceCosts.Any(cost => !string.Equals(cost.CostSource, "Estimated", StringComparison.OrdinalIgnoreCase))
-                    ? resourceCosts.Where(cost => !string.Equals(cost.CostSource, "Estimated", StringComparison.OrdinalIgnoreCase)).ToList()
-                    : resourceCosts;
+                var currentPeriodSnapshotCosts = currentPeriodActualResourceCosts.Values
+                    .Concat(currentPeriodEstimatedCosts)
+                    .ToList();
+
+                var preferredSnapshotCosts = currentPeriodSnapshotCosts.Any(cost => !string.Equals(cost.CostSource, "Estimated", StringComparison.OrdinalIgnoreCase))
+                    ? currentPeriodSnapshotCosts.Where(cost => !string.Equals(cost.CostSource, "Estimated", StringComparison.OrdinalIgnoreCase)).ToList()
+                    : currentPeriodSnapshotCosts;
                 var estimatedMonthlyCost = preferredSnapshotCosts.Sum(cost => cost.Amount);
                 var existingSnapshots = await _dbContext.CloudCostSnapshots
                     .Where(snapshot =>
@@ -361,26 +399,26 @@ public sealed class CloudConnectionSyncService : ICloudConnectionSyncService
                     Provider = connection.Provider,
                     SubscriptionId = connection.SubscriptionId,
                     Amount = decimal.Round(estimatedMonthlyCost, 2),
-                    Currency = resourceCosts.Select(cost => cost.Currency).FirstOrDefault(currency => !string.IsNullOrWhiteSpace(currency)) ?? "USD",
+                    Currency = currentPeriodSnapshotCosts.Select(cost => cost.Currency).FirstOrDefault(currency => !string.IsNullOrWhiteSpace(currency)) ?? "USD",
                     Granularity = "Monthly",
                     PeriodStart = periodStart,
                     PeriodEnd = DateTimeOffset.UtcNow,
                     CapturedAt = DateTimeOffset.UtcNow,
                     RawData = JsonSerializer.Serialize(new
                     {
-                        source = preferredSnapshotCosts.Count == resourceCosts.Count
+                        source = preferredSnapshotCosts.Count == currentPeriodSnapshotCosts.Count
                             ? "resource-cost-sync"
                             : "actual-preferred-resource-cost-sync",
                         resourceCount = resources.Count,
-                        actualCostCount = resourceCosts.Count(cost => !string.Equals(cost.CostSource, "Estimated", StringComparison.OrdinalIgnoreCase)),
-                        estimatedFallbackCount = resourceCosts.Count(cost => string.Equals(cost.CostSource, "Estimated", StringComparison.OrdinalIgnoreCase)),
+                        actualCostCount = currentPeriodSnapshotCosts.Count(cost => !string.Equals(cost.CostSource, "Estimated", StringComparison.OrdinalIgnoreCase)),
+                        estimatedFallbackCount = currentPeriodSnapshotCosts.Count(cost => string.Equals(cost.CostSource, "Estimated", StringComparison.OrdinalIgnoreCase)),
                         snapshotCostCount = preferredSnapshotCosts.Count
                     })
                 });
 
                 connection.LastSyncedAt = DateTimeOffset.UtcNow;
                 connection.SyncStatus = "Healthy";
-                connection.SyncMessage = $"Synced {resources.Count} resources, {providerBudgets.Count} budgets, {metricsToPersist.Count} metrics, {recommendations.Count} recommendations, and refreshed {resourceCosts.Count} cost allocations ({resourceCosts.Count(cost => !string.Equals(cost.CostSource, "Estimated", StringComparison.OrdinalIgnoreCase))} actual).";
+                connection.SyncMessage = $"Synced {resources.Count} resources, {providerBudgets.Count} budgets, {metricsToPersist.Count} metrics, {recommendations.Count} recommendations, and refreshed {currentPeriodSnapshotCosts.Count} current-month cost allocations ({actualResourceCosts.Count} historical actual records retained).";
 
                 syncResults.Add(new CloudConnectionSyncOutcome
                 {
@@ -391,8 +429,8 @@ public sealed class CloudConnectionSyncService : ICloudConnectionSyncService
                     Resources = resources.Count,
                     Budgets = providerBudgets.Count,
                     Metrics = metricsToPersist.Count,
-                    ResourceCosts = resourceCosts.Count,
-                    ActualResourceCosts = resourceCosts.Count(cost => !string.Equals(cost.CostSource, "Estimated", StringComparison.OrdinalIgnoreCase)),
+                    ResourceCosts = currentPeriodSnapshotCosts.Count,
+                    ActualResourceCosts = currentPeriodSnapshotCosts.Count(cost => !string.Equals(cost.CostSource, "Estimated", StringComparison.OrdinalIgnoreCase)),
                     Recommendations = recommendations.Count,
                     Message = connection.SyncMessage
                 });

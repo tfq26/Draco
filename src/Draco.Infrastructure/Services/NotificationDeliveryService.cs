@@ -125,12 +125,28 @@ public class NotificationDeliveryService : INotificationDeliveryService
         var providerSegment = string.IsNullOrWhiteSpace(notification.Provider)
             ? string.Empty
             : $" [{notification.Provider}]";
-        var workflowHint = await ResolveWorkflowHintAsync(userId, notification, cancellationToken);
+        var workflowReference = await ResolveWorkflowReferenceAsync(userId, notification, cancellationToken);
+        var lines = new List<string>
+        {
+            $"Draco {notification.Severity}{providerSegment}",
+            notification.Title,
+            notification.Message
+        };
 
-        return $"Draco {notification.Severity}{providerSegment}: {notification.Title}. {notification.Message}{workflowHint} Reply STATUS, APPROVE 1, DISMISS 1, or APPROVE <id>.";
+        if (workflowReference is not null)
+        {
+            lines.Add($"Open workflow: {workflowReference.Value.ShortId}.");
+            lines.Add($"Reply APPROVE {workflowReference.Value.ShortId}, DISMISS {workflowReference.Value.ShortId}, or STATUS.");
+        }
+        else
+        {
+            lines.Add("Reply STATUS to review current workflow items.");
+        }
+
+        return string.Join(Environment.NewLine, lines);
     }
 
-    private async Task<string> ResolveWorkflowHintAsync(
+    private async Task<WorkflowReference?> ResolveWorkflowReferenceAsync(
         Guid userId,
         SystemNotification notification,
         CancellationToken cancellationToken)
@@ -173,10 +189,12 @@ public class NotificationDeliveryService : INotificationDeliveryService
         }
 
         return matchingRun is null
-            ? string.Empty
-            : $" Workflow {ShortId(matchingRun.Id)} is open for review.";
+            ? null
+            : new WorkflowReference(matchingRun.Id, ShortId(matchingRun.Id));
     }
 
     private static string ShortId(Guid id) =>
         id.ToString("N")[..8].ToUpperInvariant();
+
+    private readonly record struct WorkflowReference(Guid Id, string ShortId);
 }

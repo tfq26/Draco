@@ -18,6 +18,7 @@ public class AzureProvider : ICloudProvider
     private const string CostManagementQueryApiVersion = "2025-03-01";
     private const string MetricsApiVersion = "2023-10-01";
     private const string BillingAccountsApiVersion = "2024-04-01";
+    private const int HistoricalMonthWindow = 6;
     private readonly ILogger<AzureProvider> _logger;
     private ArmClient? _armClient;
 
@@ -172,14 +173,20 @@ public class AzureProvider : ICloudProvider
             return [];
         }
 
-        var periodStart = new DateTimeOffset(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1, 0, 0, 0, TimeSpan.Zero);
+        var currentPeriodStart = new DateTimeOffset(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1, 0, 0, 0, TimeSpan.Zero);
         using var client = new HttpClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        var historicalCosts = new List<CloudResourceCost>();
 
-        var queryItems = await GetResourceCostsFromCostQueryAsync(subscriptionId, resourceMap, client, cancellationToken);
-        if (queryItems.Count > 0)
+        foreach (var periodStart in GetHistoricalMonthStarts(currentPeriodStart))
         {
-            return queryItems.Select(item => new CloudResourceCost
+            var periodEndExclusive = periodStart.AddMonths(1);
+            var queryItems = await GetResourceCostsFromCostQueryAsync(subscriptionId, resourceMap, client, periodStart, periodEndExclusive, cancellationToken);
+            var itemsToUse = queryItems.Count > 0
+                ? queryItems
+                : await GetResourceCostsFromUsageDetailsAsync(subscriptionId, periodStart, resourceMap, client, cancellationToken);
+
+            historicalCosts.AddRange(itemsToUse.Select(item => new CloudResourceCost
             {
                 ResourceId = item.Key,
                 Provider = ProviderName,
@@ -189,33 +196,21 @@ public class AzureProvider : ICloudProvider
                 Currency = item.Value.Currency,
                 Granularity = "Monthly",
                 PeriodStart = periodStart,
-                PeriodEnd = DateTimeOffset.UtcNow,
+                PeriodEnd = periodStart == currentPeriodStart ? DateTimeOffset.UtcNow : periodEndExclusive.AddTicks(-1),
                 CapturedAt = item.Value.CapturedAt,
                 CostSource = "AzureActual"
-            }).ToList();
+            }));
         }
 
-        var usageItems = await GetResourceCostsFromUsageDetailsAsync(subscriptionId, periodStart, resourceMap, client, cancellationToken);
-        return usageItems.Select(item => new CloudResourceCost
-        {
-            ResourceId = item.Key,
-            Provider = ProviderName,
-            SubscriptionId = subscriptionId,
-            ResourceGroupName = item.Value.ResourceGroupName,
-            Amount = decimal.Round(item.Value.Amount, 2),
-            Currency = item.Value.Currency,
-            Granularity = "Monthly",
-            PeriodStart = periodStart,
-            PeriodEnd = DateTimeOffset.UtcNow,
-            CapturedAt = item.Value.CapturedAt,
-            CostSource = "AzureActual"
-        }).ToList();
+        return historicalCosts;
     }
 
     private async Task<Dictionary<string, (decimal Amount, string Currency, string ResourceGroupName, DateTimeOffset CapturedAt)>> GetResourceCostsFromCostQueryAsync(
         string subscriptionId,
         IReadOnlyDictionary<string, CloudResource> resourceMap,
         HttpClient client,
+        DateTimeOffset periodStart,
+        DateTimeOffset periodEndExclusive,
         CancellationToken cancellationToken)
     {
         var usageItems = new Dictionary<string, (decimal Amount, string Currency, string ResourceGroupName, DateTimeOffset CapturedAt)>(StringComparer.OrdinalIgnoreCase);
@@ -223,7 +218,12 @@ public class AzureProvider : ICloudProvider
         var requestBody = JsonSerializer.Serialize(new
         {
             type = "Usage",
-            timeframe = "MonthToDate",
+            timeframe = "Custom",
+            timePeriod = new
+            {
+                from = periodStart.UtcDateTime.ToString("O"),
+                to = periodEndExclusive.UtcDateTime.ToString("O")
+            },
             dataset = new
             {
                 granularity = "None",
@@ -325,6 +325,14 @@ public class AzureProvider : ICloudProvider
         }
 
         return usageItems;
+    }
+
+    private static IEnumerable<DateTimeOffset> GetHistoricalMonthStarts(DateTimeOffset currentPeriodStart)
+    {
+        for (var monthOffset = HistoricalMonthWindow - 1; monthOffset >= 0; monthOffset--)
+        {
+            yield return currentPeriodStart.AddMonths(-monthOffset);
+        }
     }
 
     private async Task<Dictionary<string, (decimal Amount, string Currency, string ResourceGroupName, DateTimeOffset CapturedAt)>> GetResourceCostsFromUsageDetailsAsync(

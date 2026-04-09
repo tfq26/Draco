@@ -39,7 +39,8 @@ public static class NotificationDeliveryPreferencesSerializer
         return new NotificationDeliveryPreferences
         {
             BrowserEnabled = true,
-            EmailEnabled = false,
+            EmailEnabled = normalizedPreferredChannels.Contains(NotificationChannelNames.Email)
+                && !string.IsNullOrWhiteSpace(fallbackEmail),
             EmailAddress = fallbackEmail,
             MessagesEnabled = normalizedPreferredChannels.Contains(NotificationChannelNames.Messages)
                 && messagesNumbers.Count > 0,

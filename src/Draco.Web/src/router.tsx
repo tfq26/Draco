@@ -5,6 +5,7 @@ import { Route as dashboardRoute } from './routes/dashboard'
 import { Route as setupRoute } from './routes/setup'
 import { CallbackRoute, LegacyCallbackRoute } from './routes/callback'
 import { ResourcesRoute } from './routes/resources'
+import { ResourceDetailRoute } from './routes/resource-detail'
 import { GovernanceRoute } from './routes/governance'
 import { SettingsRoute } from './routes/settings'
 import { AwsOnboardingRoute } from './routes/aws-onboarding'
@@ -16,6 +17,7 @@ const routeTree = rootRoute.addChildren([
   CallbackRoute,
   LegacyCallbackRoute,
   ResourcesRoute,
+  ResourceDetailRoute,
   GovernanceRoute,
   SettingsRoute,
   AwsOnboardingRoute

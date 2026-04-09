@@ -2,6 +2,7 @@ import * as React from "react"
 import { Drawer as DrawerPrimitive } from "vaul"
 
 import { cn } from "@/lib/utils"
+import { useIsMobile } from "../../hooks/useIsMobile"
 
 const DrawerContext = React.createContext<{ direction?: "top" | "bottom" | "left" | "right" }>({
   direction: "bottom",
@@ -45,6 +46,7 @@ const DrawerContent = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof DrawerPrimitive.Content>
 >(({ className, children, ...props }, ref) => {
   const { direction } = React.useContext(DrawerContext)
+  const isMobile = useIsMobile()
   
   return (
     <DrawerPortal>
@@ -54,7 +56,9 @@ const DrawerContent = React.forwardRef<
         className={cn(
           "fixed z-[310] flex flex-col bg-popover shadow-2xl transition-transform duration-300 ease-in-out",
           direction === "bottom" && "inset-x-0 bottom-0 mt-24 h-auto rounded-t-2xl",
-          direction === "right" && "inset-y-0 right-0 h-full w-[400px] border-l border-border",
+          direction === "right" && (isMobile
+            ? "inset-x-0 bottom-0 h-[92vh] rounded-t-2xl border-t border-border"
+            : "inset-y-0 right-0 h-full w-[400px] border-l border-border"),
           className
         )}
         style={{ 
@@ -67,7 +71,12 @@ const DrawerContent = React.forwardRef<
           <div className="mx-auto mt-4 h-1.5 w-12 rounded-full bg-muted/20" />
         )}
         {direction === "right" && (
-          <div className="absolute left-[8px] top-1/2 h-16 w-1 -translate-y-1/2 rounded-full bg-muted/20" />
+          <div className={cn(
+            "absolute rounded-full bg-muted/20",
+            isMobile
+              ? "left-1/2 top-4 h-1.5 w-12 -translate-x-1/2"
+              : "left-[8px] top-1/2 h-16 w-1 -translate-y-1/2",
+          )} />
         )}
         {children}
       </DrawerPrimitive.Content>

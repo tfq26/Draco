@@ -311,6 +311,33 @@ export interface ResourceDetail {
     providerTotal: number
     resourceGroupTotal: number
   } | null
+}
+
+export interface ResourceCostHistoryPoint {
+  id: string
+  amount: number
+  currency: string
+  costSource: string
+  granularity: string
+  periodStart: string
+  periodEnd: string
+  capturedAt: string
+}
+
+export interface ResourceCostBaseline {
+  sampleMonthCount: number
+  averageMonthlyCost?: number | null
+  currentMonthCost: number
+  currentVsAveragePercentage?: number | null
+  projectedMonthlyCost?: number | null
+  projectedVsAveragePercentage?: number | null
+  highestMonthlyCost?: number | null
+  lowestMonthlyCost?: number | null
+}
+
+export interface ResourceInsights extends ResourceDetail {
+  costHistory: ResourceCostHistoryPoint[]
+  costBaseline: ResourceCostBaseline
   availableActions: ResourceActionDefinition[]
   actionAudits: ResourceActionAudit[]
   recommendations: Array<{
@@ -755,6 +782,7 @@ export const dracoApi = {
   resources: {
     list: () => fetchWithAuth<ResourceRecord[]>('/api/resources/list'),
     getById: (id: string) => fetchWithAuth<ResourceDetail>(`/api/resources/detail?id=${encodeURIComponent(id)}`),
+    getInsights: (id: string) => fetchWithAuth<ResourceInsights>(`/api/resources/insights?id=${encodeURIComponent(id)}`),
     executeAction: (resourceId: string, action: string) =>
       fetchWithAuth<ResourceActionExecutionResult>('/api/resources/actions/execute', {
         method: 'POST',

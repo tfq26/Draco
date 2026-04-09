@@ -66,6 +66,12 @@ public class NotificationEvaluationService : INotificationEvaluationService
             .Where(budget => budget.UserId == userId && budget.IsActive)
             .ToListAsync(cancellationToken);
 
+        var costSnapshots = await _dbContext.CloudCostSnapshots
+            .AsNoTracking()
+            .Where(snapshot => snapshot.UserId == userId)
+            .OrderByDescending(snapshot => snapshot.PeriodEnd)
+            .ToListAsync(cancellationToken);
+
         var resourceCosts = resourceIds.Count == 0
             ? []
             : (await _dbContext.CloudResourceCosts
@@ -78,6 +84,16 @@ public class NotificationEvaluationService : INotificationEvaluationService
                 .Select(group => group.First())
                 .ToList();
 
+        var currentPeriodResourceCosts = CurrentSpendSummaryBuilder.SelectLatestPeriodRollupCosts(resourceCosts);
+
+        var recommendations = await _dbContext.CostRecommendations
+            .AsNoTracking()
+            .Where(recommendation =>
+                recommendation.Status == "Pending" &&
+                subscriptionIds.Contains(recommendation.SubscriptionId))
+            .OrderByDescending(recommendation => recommendation.PotentialSavings)
+            .ToListAsync(cancellationToken);
+
         var metrics = resourceIds.Count == 0
             ? []
             : await _dbContext.ObservabilityMetrics
@@ -88,11 +104,13 @@ public class NotificationEvaluationService : INotificationEvaluationService
                 .OrderByDescending(metric => metric.Timestamp)
                 .ToListAsync(cancellationToken);
 
-        var currentSpendByScope = resourceCosts
-            .GroupBy(cost => $"{cost.Provider}:{cost.SubscriptionId}", StringComparer.OrdinalIgnoreCase)
+        var currentSpendByScope = CurrentSpendSummaryBuilder.BuildCurrentSpendByScope(
+                budgets,
+                costSnapshots,
+                currentPeriodResourceCosts)
             .ToDictionary(
-                group => group.Key,
-                group => group.Sum(cost => cost.Amount),
+                item => item.Key,
+                item => item.Value.CurrentAmount,
                 StringComparer.OrdinalIgnoreCase);
 
         var context = new NotificationEvaluationContext
@@ -102,6 +120,7 @@ public class NotificationEvaluationService : INotificationEvaluationService
             Resources = resources,
             ResourceCosts = resourceCosts,
             Budgets = budgets,
+            Recommendations = recommendations,
             Metrics = metrics,
             CurrentSpendByScope = currentSpendByScope,
             EvaluatedAt = DateTimeOffset.UtcNow
@@ -298,19 +317,18 @@ public sealed class BudgetThresholdNotificationRule : INotificationRule
                     : comparisonPercentage >= threshold.ThresholdPercentage + 10
                         ? "High"
                         : "Medium";
-                var statusText = comparisonPercentage >= 100 ? "exceeded" : "approaching";
+                var statusText = comparisonPercentage >= 100 ? "has exceeded" : "is approaching";
+                var budgetDisplayName = HumanizeBudgetName(budget.Name);
                 var reminderTarget = string.Equals(thresholdType, "Forecasted", StringComparison.OrdinalIgnoreCase) && forecastSpend.HasValue
                     ? $"Forecast spend is {FormatCurrency(comparisonAmount, budget.Currency)}"
-                    : $"Spend is {FormatCurrency(comparisonAmount, budget.Currency)}";
-                var reminderNameSuffix = string.IsNullOrWhiteSpace(threshold.Name) || string.Equals(threshold.Name, "default", StringComparison.OrdinalIgnoreCase)
-                    ? string.Empty
-                    : $" ({threshold.Name})";
+                    : $"Current spend is {FormatCurrency(comparisonAmount, budget.Currency)}";
+                var thresholdLabel = DescribeThreshold(threshold);
 
                 yield return new NotificationCandidate
                 {
                     NotificationKey = $"budget:{budget.Id}:{thresholdType}:{threshold.ThresholdPercentage:F2}:{threshold.Name}",
-                    Title = $"{budget.Name}{reminderNameSuffix} is {statusText} its limit",
-                    Message = $"{reminderTarget} against a {FormatCurrency(budget.Amount, budget.Currency)} budget ({comparisonPercentage:F1}% used, threshold {threshold.ThresholdPercentage:F0}%).",
+                    Title = $"{budgetDisplayName} {statusText} the budget limit",
+                    Message = $"{reminderTarget} against a budget of {FormatCurrency(budget.Amount, budget.Currency)} ({comparisonPercentage:F1}% used, threshold {threshold.ThresholdPercentage:F0}%{thresholdLabel}).",
                     Type = severity == "Critical" ? "Error" : "Warning",
                     Severity = severity,
                     Category = "Budget",
@@ -343,6 +361,32 @@ public sealed class BudgetThresholdNotificationRule : INotificationRule
         }
     }
 
+    private static string HumanizeBudgetName(string name) =>
+        string.IsNullOrWhiteSpace(name)
+            ? "Budget"
+            : name.Replace('_', ' ').Trim();
+
+    private static string DescribeThreshold(ProviderBudgetNotificationSnapshot threshold)
+    {
+        var rawName = threshold.Name?.Trim();
+        if (string.IsNullOrWhiteSpace(rawName) ||
+            string.Equals(rawName, "default", StringComparison.OrdinalIgnoreCase))
+        {
+            return string.Empty;
+        }
+
+        if (rawName.Contains("GreaterThan", StringComparison.OrdinalIgnoreCase) ||
+            rawName.Contains("Percent", StringComparison.OrdinalIgnoreCase))
+        {
+            return string.Equals(threshold.ThresholdType, "Forecasted", StringComparison.OrdinalIgnoreCase)
+                ? ", forecast threshold"
+                : ", actual spend threshold";
+        }
+
+        var humanized = rawName.Replace('_', ' ').Trim();
+        return $", {humanized}";
+    }
+
     private static List<ProviderBudgetNotificationSnapshot> ParseBudgetNotifications(CostBudget budget)
     {
         if (string.IsNullOrWhiteSpace(budget.NotificationSettingsJson))
@@ -361,7 +405,134 @@ public sealed class BudgetThresholdNotificationRule : INotificationRule
     }
 
     private static string FormatCurrency(decimal amount, string currency) =>
-        string.IsNullOrWhiteSpace(currency) ? amount.ToString("0.##") : $"{amount:0.##} {currency}";
+        string.IsNullOrWhiteSpace(currency)
+            ? amount.ToString("N2")
+            : string.Equals(currency, "USD", StringComparison.OrdinalIgnoreCase)
+                ? $"${amount:N2}"
+                : $"{amount:N2} {currency}";
+}
+
+public sealed class ConnectionHealthNotificationRule : INotificationRule
+{
+    private static readonly TimeSpan StaleSyncThreshold = TimeSpan.FromHours(12);
+
+    public string RuleId => "connection-health";
+
+    public IEnumerable<string> GetRequiredMetricNames(CloudResource resource) => [];
+
+    public IEnumerable<NotificationCandidate> Evaluate(NotificationEvaluationContext context)
+    {
+        foreach (var connection in context.Connections)
+        {
+            var isHealthy = string.Equals(connection.SyncStatus, "Healthy", StringComparison.OrdinalIgnoreCase);
+            var lastSyncedAt = connection.LastSyncedAt;
+            var isStale = !lastSyncedAt.HasValue || context.EvaluatedAt - lastSyncedAt.Value >= StaleSyncThreshold;
+
+            if (isHealthy && !isStale)
+            {
+                continue;
+            }
+
+            var severity = string.Equals(connection.SyncStatus, "Failed", StringComparison.OrdinalIgnoreCase)
+                ? "High"
+                : lastSyncedAt.HasValue
+                    ? "Medium"
+                    : "High";
+            var message = string.Equals(connection.SyncStatus, "Failed", StringComparison.OrdinalIgnoreCase)
+                ? $"The latest sync failed: {connection.SyncMessage ?? "no error message was recorded"}."
+                : lastSyncedAt.HasValue
+                    ? $"The last successful sync was {lastSyncedAt.Value:O}. Current status is {connection.SyncStatus}."
+                    : "This connection has not completed a successful sync yet.";
+
+            yield return new NotificationCandidate
+            {
+                NotificationKey = $"connection:{connection.Id}:{connection.SyncStatus}:{lastSyncedAt:O}",
+                Title = $"{connection.Provider} sync needs attention",
+                Message = message,
+                Type = severity == "High" ? "Error" : "Warning",
+                Severity = severity,
+                Category = "ConnectionHealth",
+                Provider = connection.Provider,
+                SubscriptionId = connection.SubscriptionId,
+                Service = "Sync",
+                ResourceUrl = "/resources",
+                SourceRule = RuleId,
+                Metadata = JsonSerializer.Serialize(new
+                {
+                    connection.Id,
+                    connection.Provider,
+                    connection.SubscriptionId,
+                    connection.SyncStatus,
+                    connection.SyncMessage,
+                    connection.LastSyncedAt
+                })
+            };
+        }
+    }
+}
+
+public sealed class CostOptimizationNotificationRule : INotificationRule
+{
+    public string RuleId => "cost-optimization";
+
+    public IEnumerable<string> GetRequiredMetricNames(CloudResource resource) => [];
+
+    public IEnumerable<NotificationCandidate> Evaluate(NotificationEvaluationContext context)
+    {
+        foreach (var recommendation in context.Recommendations
+                     .Where(IsIdleOptimizationRecommendation))
+        {
+            var severity = recommendation.PotentialSavings >= 100m ? "High" : "Medium";
+            var actionVerb = recommendation.Description.Contains("delete", StringComparison.OrdinalIgnoreCase) ||
+                             recommendation.RecommendationType.Contains("delete", StringComparison.OrdinalIgnoreCase)
+                ? "deleted"
+                : "stopped";
+
+            yield return new NotificationCandidate
+            {
+                NotificationKey = $"optimization:{recommendation.Id}",
+                Title = $"{recommendation.ResourceName} can likely be {actionVerb} to save cost",
+                Message = $"{recommendation.Description} Estimated monthly savings: {recommendation.PotentialSavings:0.##} {recommendation.Currency}.",
+                Type = severity == "High" ? "Warning" : "Info",
+                Severity = severity,
+                Category = "Optimization",
+                Provider = recommendation.Provider,
+                SubscriptionId = recommendation.SubscriptionId,
+                ResourceId = recommendation.ResourceId,
+                Service = "CostOptimization",
+                ResourceUrl = "/resources",
+                SourceRule = RuleId,
+                Metadata = JsonSerializer.Serialize(new
+                {
+                    recommendation.Id,
+                    recommendation.ResourceId,
+                    recommendation.ResourceName,
+                    recommendation.RecommendationType,
+                    recommendation.PotentialSavings,
+                    recommendation.Currency
+                })
+            };
+        }
+    }
+
+    private static bool IsIdleOptimizationRecommendation(CostRecommendation recommendation)
+    {
+        if (!string.Equals(recommendation.Status, "Pending", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var recommendationType = recommendation.RecommendationType ?? string.Empty;
+        var description = recommendation.Description ?? string.Empty;
+
+        return recommendation.PotentialSavings > 0m &&
+               (recommendationType.Contains("idle", StringComparison.OrdinalIgnoreCase) ||
+                recommendationType.Contains("unused", StringComparison.OrdinalIgnoreCase) ||
+                recommendationType.Contains("underutilized", StringComparison.OrdinalIgnoreCase) ||
+                description.Contains("idle", StringComparison.OrdinalIgnoreCase) ||
+                description.Contains("unused", StringComparison.OrdinalIgnoreCase) ||
+                description.Contains("underutilized", StringComparison.OrdinalIgnoreCase));
+    }
 }
 
 public sealed class ComputeResourceNotificationRule : INotificationRule

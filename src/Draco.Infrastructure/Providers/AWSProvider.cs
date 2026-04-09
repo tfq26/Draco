@@ -27,6 +27,7 @@ namespace Draco.Infrastructure.Providers;
 
 public class AWSProvider : ICloudProvider
 {
+    private const int HistoricalMonthWindow = 6;
     private readonly ILogger<AWSProvider> _logger;
     private readonly IConfiguration _configuration;
 
@@ -272,14 +273,15 @@ public class AWSProvider : ICloudProvider
         try
         {
             using var client = CreateCostExplorerClient(await ResolveConnectionContextAsync(accessToken, cancellationToken));
-            var periodStart = new DateTimeOffset(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1, 0, 0, 0, TimeSpan.Zero);
-            var periodEnd = periodStart.AddMonths(1);
+            var currentPeriodStart = new DateTimeOffset(DateTime.UtcNow.Year, DateTime.UtcNow.Month, 1, 0, 0, 0, TimeSpan.Zero);
+            var historicalPeriodStart = currentPeriodStart.AddMonths(-(HistoricalMonthWindow - 1));
+            var periodEnd = currentPeriodStart.AddMonths(1);
             var request = new GetCostAndUsageWithResourcesRequest
             {
                 Granularity = Granularity.MONTHLY,
                 TimePeriod = new DateInterval
                 {
-                    Start = periodStart.UtcDateTime.ToString("yyyy-MM-dd"),
+                    Start = historicalPeriodStart.UtcDateTime.ToString("yyyy-MM-dd"),
                     End = periodEnd.UtcDateTime.ToString("yyyy-MM-dd")
                 },
                 Metrics = ["UnblendedCost"],
@@ -326,6 +328,15 @@ public class AWSProvider : ICloudProvider
                 var response = await client.GetCostAndUsageWithResourcesAsync(request, cancellationToken);
                 foreach (var result in response.ResultsByTime)
                 {
+                    if (!DateTimeOffset.TryParse(result.TimePeriod.Start, out var resultPeriodStart))
+                    {
+                        continue;
+                    }
+
+                    var resultPeriodEnd = DateTimeOffset.TryParse(result.TimePeriod.End, out var resultPeriodEndExclusive)
+                        ? (resultPeriodStart == currentPeriodStart ? DateTimeOffset.UtcNow : resultPeriodEndExclusive.AddTicks(-1))
+                        : (resultPeriodStart == currentPeriodStart ? DateTimeOffset.UtcNow : resultPeriodStart.AddMonths(1).AddTicks(-1));
+
                     foreach (var group in result.Groups)
                     {
                         var groupedResourceId = group.Keys.FirstOrDefault();
@@ -346,7 +357,7 @@ public class AWSProvider : ICloudProvider
                             continue;
                         }
 
-                        actualCosts[resource.Id] = new CloudResourceCost
+                        actualCosts[$"{resource.Id}::{resultPeriodStart:O}"] = new CloudResourceCost
                         {
                             ResourceId = resource.Id,
                             Provider = ProviderName,
@@ -355,8 +366,8 @@ public class AWSProvider : ICloudProvider
                             Amount = decimal.Round(amount, 2),
                             Currency = string.IsNullOrWhiteSpace(metric.Unit) ? "USD" : metric.Unit,
                             Granularity = "Monthly",
-                            PeriodStart = periodStart,
-                            PeriodEnd = DateTimeOffset.UtcNow,
+                            PeriodStart = resultPeriodStart,
+                            PeriodEnd = resultPeriodEnd,
                             CapturedAt = DateTimeOffset.UtcNow,
                             CostSource = "AwsActual"
                         };

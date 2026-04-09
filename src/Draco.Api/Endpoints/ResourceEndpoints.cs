@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Draco.Application.Interfaces;
 using Draco.Domain.Entities;
 using Draco.Infrastructure.Data;
+using Draco.Infrastructure.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 
@@ -18,6 +19,9 @@ public static class ResourceEndpoints
 
         group.MapGet("/detail", GetResourceAsync)
             .WithName("GetResourceByQuery");
+
+        group.MapGet("/insights", GetResourceInsightsAsync)
+            .WithName("GetResourceInsights");
 
         group.MapPost("/actions/execute", ExecuteResourceActionAsync)
             .WithName("ExecuteResourceAction");
@@ -197,7 +201,7 @@ public static class ResourceEndpoints
                     cost.PeriodStart == latestCost.PeriodStart)
                 .ToListAsync(cancellationToken);
 
-        var preferredPeriodCosts = SelectPreferredRollupCosts(periodCosts);
+        var preferredPeriodCosts = CurrentSpendSummaryBuilder.SelectPreferredRollupCosts(periodCosts);
 
         var resourceGroupTotal = latestCost is null
             ? 0m
@@ -238,7 +242,187 @@ public static class ResourceEndpoints
                 {
                     providerTotal,
                     resourceGroupTotal
+                }
+        });
+    }
+
+    private static async Task<IResult> GetResourceInsightsAsync(
+        string? id,
+        ClaimsPrincipal userPrincipal,
+        DracoDbContext dbContext,
+        IResourceActionService resourceActionService,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            return Results.BadRequest(new { message = "Resource id is required." });
+        }
+
+        var user = await userPrincipal.GetCurrentUserAsync(dbContext, cancellationToken);
+        if (user is null)
+        {
+            return Results.Unauthorized();
+        }
+
+        var allowedSubscriptions = user.Connections
+            .Where(connection => connection.IsActive)
+            .Select(connection => connection.SubscriptionId)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct()
+            .ToList();
+
+        var resource = await dbContext.CloudResources
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                candidate => candidate.Id == id && allowedSubscriptions.Contains(candidate.SubscriptionId),
+                cancellationToken);
+
+        if (resource is null)
+        {
+            return Results.NotFound(new { message = "Resource not found." });
+        }
+
+        var allPeriodCosts = await dbContext.CloudResourceCosts
+            .AsNoTracking()
+            .Where(cost => cost.UserId == user.Id && cost.ResourceId == resource.Id)
+            .OrderByDescending(cost => cost.PeriodStart)
+            .ThenByDescending(cost => cost.CapturedAt)
+            .ToListAsync(cancellationToken);
+
+        var preferredMonthlyCosts = CurrentSpendSummaryBuilder.SelectPreferredMonthlyResourceCosts(allPeriodCosts);
+        var latestCost = preferredMonthlyCosts.FirstOrDefault();
+
+        var resolvedResourceGroupName = !string.IsNullOrWhiteSpace(resource.ResourceGroupName)
+            ? resource.ResourceGroupName
+            : ExtractResourceGroupName(resource.Id) switch
+            {
+                { Length: > 0 } resourceGroupNameFromId => resourceGroupNameFromId,
+                _ => latestCost?.ResourceGroupName ?? string.Empty
+            };
+
+        var periodCosts = latestCost is null
+            ? []
+            : await dbContext.CloudResourceCosts
+                .AsNoTracking()
+                .Where(cost =>
+                    cost.UserId == user.Id &&
+                    cost.Provider == latestCost.Provider &&
+                    cost.SubscriptionId == latestCost.SubscriptionId &&
+                    cost.PeriodStart == latestCost.PeriodStart)
+                .ToListAsync(cancellationToken);
+
+        var preferredPeriodCosts = CurrentSpendSummaryBuilder.SelectPreferredRollupCosts(periodCosts);
+
+        var resourceGroupTotal = latestCost is null
+            ? 0m
+            : preferredPeriodCosts
+                .Where(cost => string.Equals(cost.ResourceGroupName, resolvedResourceGroupName, StringComparison.OrdinalIgnoreCase))
+                .Sum(cost => cost.Amount);
+
+        var providerTotal = latestCost is null
+            ? 0m
+            : preferredPeriodCosts.Sum(cost => cost.Amount);
+
+        var recommendations = await dbContext.CostRecommendations
+            .AsNoTracking()
+            .Where(recommendation => recommendation.ResourceId == resource.Id)
+            .OrderByDescending(recommendation => recommendation.PotentialSavings)
+            .ToListAsync(cancellationToken);
+
+        var recentMetrics = await dbContext.ObservabilityMetrics
+            .AsNoTracking()
+            .Where(metric => metric.ResourceId == resource.Id)
+            .OrderByDescending(metric => metric.Timestamp)
+            .Take(120)
+            .ToListAsync(cancellationToken);
+
+        var availableActions = await resourceActionService.GetSupportedActionsAsync(resource, cancellationToken);
+        var actionAudits = await dbContext.RemediationAudits
+            .AsNoTracking()
+            .Where(audit => audit.ResourceId == resource.Id)
+            .OrderByDescending(audit => audit.CreatedAt)
+            .Take(20)
+            .ToListAsync(cancellationToken);
+
+        var orderedCostHistory = preferredMonthlyCosts
+            .OrderBy(cost => cost.PeriodStart)
+            .ToList();
+
+        var historicalBaselineCosts = orderedCostHistory
+            .TakeLast(6)
+            .ToList();
+
+        var baselineMonthCount = historicalBaselineCosts.Count;
+        var averageMonthlyCost = baselineMonthCount >= 3
+            ? decimal.Round(historicalBaselineCosts.Average(cost => cost.Amount), 2)
+            : (decimal?)null;
+
+        var currentMonthCost = latestCost?.Amount ?? 0m;
+        var currentVsAveragePercentage = averageMonthlyCost is > 0
+            ? decimal.Round((currentMonthCost / averageMonthlyCost.Value) * 100m, 1)
+            : (decimal?)null;
+
+        decimal? projectedMonthlyCost = null;
+        decimal? projectedVsAveragePercentage = null;
+
+        if (latestCost is not null)
+        {
+            var currentUtcDate = DateTimeOffset.UtcNow.UtcDateTime.Date;
+            var periodStartDate = latestCost.PeriodStart.UtcDateTime.Date;
+            var daysElapsed = Math.Max(1, (currentUtcDate - periodStartDate).Days + 1);
+            var daysInMonth = DateTime.DaysInMonth(periodStartDate.Year, periodStartDate.Month);
+            projectedMonthlyCost = decimal.Round((currentMonthCost / daysElapsed) * daysInMonth, 2);
+
+            if (averageMonthlyCost is > 0)
+            {
+                projectedVsAveragePercentage = decimal.Round((projectedMonthlyCost.Value / averageMonthlyCost.Value) * 100m, 1);
+            }
+        }
+
+        return Results.Ok(new
+        {
+            resource = new
+            {
+                resource.Id,
+                resource.Name,
+                resource.Type,
+                resource.Provider,
+                resource.Location,
+                resource.SubscriptionId,
+                resourceGroupName = resolvedResourceGroupName,
+                resource.Tags,
+                resource.DiscoveredAt
+            },
+            cost = latestCost,
+            costContext = latestCost is null
+                ? null
+                : new
+                {
+                    providerTotal,
+                    resourceGroupTotal
                 },
+            costHistory = orderedCostHistory.Select(cost => new
+            {
+                cost.Id,
+                cost.Amount,
+                cost.Currency,
+                cost.CostSource,
+                cost.Granularity,
+                cost.PeriodStart,
+                cost.PeriodEnd,
+                cost.CapturedAt
+            }),
+            costBaseline = new
+            {
+                sampleMonthCount = baselineMonthCount,
+                averageMonthlyCost,
+                currentMonthCost,
+                currentVsAveragePercentage,
+                projectedMonthlyCost,
+                projectedVsAveragePercentage,
+                highestMonthlyCost = historicalBaselineCosts.Count > 0 ? historicalBaselineCosts.Max(cost => cost.Amount) : (decimal?)null,
+                lowestMonthlyCost = historicalBaselineCosts.Count > 0 ? historicalBaselineCosts.Min(cost => cost.Amount) : (decimal?)null
+            },
             availableActions,
             actionAudits = actionAudits.Select(audit => new
             {
@@ -250,8 +434,23 @@ public static class ResourceEndpoints
                 audit.CreatedAt,
                 audit.CompletedAt
             }),
-            recommendations,
-            metrics = recentMetrics
+            recommendations = recommendations.Select(recommendation => new
+            {
+                recommendation.Id,
+                recommendation.RecommendationType,
+                recommendation.Description,
+                recommendation.PotentialSavings,
+                recommendation.Currency,
+                recommendation.Status
+            }),
+            metrics = recentMetrics.Select(metric => new
+            {
+                metric.Id,
+                metric.MetricName,
+                metric.Value,
+                metric.Unit,
+                metric.Timestamp
+            })
         });
     }
 
@@ -331,16 +530,6 @@ public static class ResourceEndpoints
         return string.Empty;
     }
 
-    private static List<CloudResourceCost> SelectPreferredRollupCosts(IReadOnlyCollection<CloudResourceCost> resourceCosts)
-    {
-        var actualCosts = resourceCosts
-            .Where(cost =>
-                string.Equals(cost.CostSource, "AzureActual", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(cost.CostSource, "AwsActual", StringComparison.OrdinalIgnoreCase))
-            .ToList();
-
-        return actualCosts.Count > 0 ? actualCosts : [.. resourceCosts];
-    }
 }
 
 public sealed record ExecuteResourceActionRequest(string ResourceId, string Action);

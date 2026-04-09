@@ -145,13 +145,17 @@ public class InsightContextService : IInsightContextService
             .ToList();
 
         var costBreakdown = BuildCostBreakdown(costSnapshots);
-        var preferredRollupResourceCosts = SelectPreferredRollupCosts(latestResourceCosts);
-        var providerCostBreakdown = BuildProviderCostBreakdown(preferredRollupResourceCosts);
+        var currentPeriodResourceCosts = CurrentSpendSummaryBuilder.SelectLatestPeriodRollupCosts(latestResourceCosts);
+        var currentSpendByScope = CurrentSpendSummaryBuilder.BuildCurrentSpendByScope(budgets, costSnapshots, currentPeriodResourceCosts);
+        var providerCostBreakdown = CurrentSpendSummaryBuilder.BuildProviderCostBreakdown(
+            [.. currentSpendByScope.Values],
+            providerBreakdown.ToDictionary(item => item.Provider, item => item.ResourceCount, StringComparer.OrdinalIgnoreCase));
+        var preferredRollupResourceCosts = currentPeriodResourceCosts;
         var resourceGroupCostBreakdown = BuildResourceGroupCostBreakdown(preferredRollupResourceCosts);
         var resourceCostBreakdown = BuildResourceCostBreakdown(resources, preferredRollupResourceCosts);
-        var budgetStatuses = BuildBudgetStatuses(budgets, costBreakdown);
-        var actualMonthlyCost = providerCostBreakdown.Sum(item => item.TotalAmount);
-        var estimatedMonthlyCost = latestResourceCosts
+        var budgetStatuses = BuildBudgetStatuses(budgets, currentSpendByScope);
+        var actualMonthlyCost = currentSpendByScope.Values.Sum(item => item.CurrentAmount);
+        var estimatedMonthlyCost = currentPeriodResourceCosts
             .Where(cost => string.Equals(cost.CostSource, "Estimated", StringComparison.OrdinalIgnoreCase))
             .Sum(cost => cost.Amount);
         var budgetForecastMonthlyCost = budgets
@@ -189,14 +193,12 @@ public class InsightContextService : IInsightContextService
             RecommendationCount = insightRecommendations.Count,
             OpenAlertCount = insightRecommendations.Count(recommendation => recommendation.Status.Equals("Pending", StringComparison.OrdinalIgnoreCase)),
             AnomalyCount = anomalies.Count,
-            CurrentMonthlyCost = providerCostBreakdown.Count > 0
-                ? actualMonthlyCost
-                : costBreakdown.Sum(item => item.CurrentAmount),
+            CurrentMonthlyCost = actualMonthlyCost,
             ForecastMonthlyCost = ForecastMonthlyCost(costSnapshots),
             ActualMonthlyCost = actualMonthlyCost,
             EstimatedMonthlyCost = estimatedMonthlyCost,
             BudgetForecastMonthlyCost = budgetForecastMonthlyCost,
-            HasEstimatedFallbackCosts = latestResourceCosts.Any(cost => string.Equals(cost.CostSource, "Estimated", StringComparison.OrdinalIgnoreCase)),
+            HasEstimatedFallbackCosts = currentPeriodResourceCosts.Any(cost => string.Equals(cost.CostSource, "Estimated", StringComparison.OrdinalIgnoreCase)),
             PotentialMonthlySavings = insightRecommendations.Sum(recommendation => recommendation.PotentialSavings),
             LastSyncedAt = latestSyncAt
         };
@@ -221,16 +223,6 @@ public class InsightContextService : IInsightContextService
             WorkflowSuggestions = workflowSuggestions
         };
     }
-
-    private static List<CloudResourceCost> SelectPreferredRollupCosts(IReadOnlyCollection<CloudResourceCost> resourceCosts) =>
-        resourceCosts
-            .GroupBy(cost => $"{cost.Provider}:{cost.SubscriptionId}", StringComparer.OrdinalIgnoreCase)
-            .SelectMany(group =>
-            {
-                var actualCosts = group.Where(IsActualCostSource).ToList();
-                return actualCosts.Count > 0 ? actualCosts : group.ToList();
-            })
-            .ToList();
 
     public string SerializeForModel(PreparedInsightContext context)
     {
@@ -293,23 +285,6 @@ public class InsightContextService : IInsightContextService
             .OrderByDescending(item => item.CurrentAmount)
             .ToList();
 
-    private static bool IsActualCostSource(CloudResourceCost cost) =>
-        string.Equals(cost.CostSource, "AzureActual", StringComparison.OrdinalIgnoreCase) ||
-        string.Equals(cost.CostSource, "AwsActual", StringComparison.OrdinalIgnoreCase);
-
-    private static List<InsightProviderCostBreakdown> BuildProviderCostBreakdown(IReadOnlyCollection<CloudResourceCost> resourceCosts) =>
-        resourceCosts
-            .GroupBy(cost => new { cost.Provider, cost.Currency })
-            .Select(group => new InsightProviderCostBreakdown
-            {
-                Provider = group.Key.Provider,
-                Currency = group.Key.Currency,
-                TotalAmount = group.Sum(item => item.Amount),
-                ResourceCount = group.Select(item => item.ResourceId).Distinct(StringComparer.OrdinalIgnoreCase).Count()
-            })
-            .OrderByDescending(item => item.TotalAmount)
-            .ToList();
-
     private static List<InsightResourceGroupCostBreakdown> BuildResourceGroupCostBreakdown(IReadOnlyCollection<CloudResourceCost> resourceCosts) =>
         resourceCosts
             .GroupBy(cost => new
@@ -362,17 +337,13 @@ public class InsightContextService : IInsightContextService
 
     private static List<InsightBudgetStatus> BuildBudgetStatuses(
         IReadOnlyCollection<CostBudget> budgets,
-        IReadOnlyCollection<InsightCostBreakdown> costBreakdown)
+        IReadOnlyDictionary<string, ScopeCurrentSpend> currentSpendByScope)
     {
-        var currentSpendMap = costBreakdown.ToDictionary(
-            item => $"{item.Provider}:{item.SubscriptionId}",
-            item => item.CurrentAmount,
-            StringComparer.OrdinalIgnoreCase);
-
         return budgets.Select(budget =>
         {
             var currentAmount = budget.CurrentSpend
-                ?? currentSpendMap.GetValueOrDefault($"{budget.Provider}:{budget.SubscriptionId}", 0m);
+                ?? currentSpendByScope.GetValueOrDefault($"{budget.Provider}:{budget.SubscriptionId}")?.CurrentAmount
+                ?? 0m;
             var consumedPercentage = budget.Amount <= 0
                 ? 0
                 : Math.Round((double)(currentAmount / budget.Amount) * 100, 2);

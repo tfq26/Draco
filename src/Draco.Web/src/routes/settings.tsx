@@ -9,6 +9,7 @@ import azureLogo from '../assets/azure-logo.svg'
 import awsLogo from '../assets/aws-logo.svg'
 import { Drawer, DrawerClose, DrawerContent, DrawerDescription, DrawerFooter, DrawerHeader, DrawerTitle } from '../components/ui/drawer'
 import { Spinner } from '../components/ui/spinner'
+import { useIsMobile } from '../hooks/useIsMobile'
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
@@ -36,6 +37,7 @@ function Settings() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const search = SettingsRoute.useSearch()
+  const isMobile = useIsMobile()
   const [activeTab, setActiveTab] = useState(search.tab || 'profile')
 
   useEffect(() => {
@@ -336,17 +338,17 @@ function Settings() {
   }
 
   return (
-    <div className="animate-fade-in" style={{ maxWidth: '1000px', margin: '0 auto', padding: '1rem' }}>
+    <div className="animate-fade-in settings-page" style={{ maxWidth: '1000px', margin: '0 auto', padding: isMobile ? '0.25rem' : '1rem' }}>
       <Tabs defaultValue="profile" value={activeTab} onValueChange={setActiveTab} className="w-full">
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2.5rem' }}>
           {/* Centered Top Navigation */}
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
-            <h2 style={{ fontSize: '2.5rem', marginBottom: '0.75rem', fontWeight: 900, letterSpacing: '-0.04em' }}>Settings</h2>
-            <p style={{ color: 'var(--muted-foreground)', fontSize: '1rem', maxWidth: '600px', marginBottom: '2.5rem' }}>
+            <h2 style={{ fontSize: isMobile ? '1.9rem' : '2.5rem', marginBottom: '0.75rem', fontWeight: 900, letterSpacing: '-0.04em' }}>Settings</h2>
+            <p style={{ color: 'var(--muted-foreground)', fontSize: isMobile ? '0.9rem' : '1rem', maxWidth: '600px', marginBottom: isMobile ? '1rem' : '2.5rem' }}>
               Manage your Draco account infrastructure and active cloud connection nodes.
             </p>
 
-            <TabsList style={{ 
+            <TabsList className="settings-tabs-list" style={{ 
               display: 'flex', 
               flexDirection: 'row', 
               padding: 0, 
@@ -354,9 +356,10 @@ function Settings() {
               background: 'transparent',
               border: 'none',
               borderBottom: '1px solid var(--border)',
-              gap: '1.5rem',
+              gap: isMobile ? '0.5rem' : '1.5rem',
               width: '100%',
-              justifyContent: 'center'
+              justifyContent: isMobile ? 'flex-start' : 'center',
+              overflowX: isMobile ? 'auto' : 'visible'
             }}>
               <TabsTrigger 
                 value="profile" 
@@ -365,10 +368,10 @@ function Settings() {
                   background: 'transparent',
                   border: 'none',
                   borderBottom: activeTab === 'profile' ? '2px solid var(--primary)' : '2px solid transparent',
-                  padding: '1rem 0.5rem', 
+                  padding: isMobile ? '0.85rem 0.35rem' : '1rem 0.5rem', 
                   borderRadius: 0, 
                   fontWeight: activeTab === 'profile' ? 700 : 500,
-                  fontSize: '0.875rem',
+                  fontSize: isMobile ? '0.8rem' : '0.875rem',
                   color: activeTab === 'profile' ? 'var(--foreground)' : 'var(--muted-foreground)',
                   marginBottom: '-1px', // Align with the borderBottom of the TabsList
                   transition: 'all 0.15s ease'
@@ -383,10 +386,10 @@ function Settings() {
                   background: 'transparent',
                   border: 'none',
                   borderBottom: activeTab === 'connections' ? '2px solid var(--primary)' : '2px solid transparent',
-                  padding: '1rem 0.5rem', 
+                  padding: isMobile ? '0.85rem 0.35rem' : '1rem 0.5rem', 
                   borderRadius: 0, 
                   fontWeight: activeTab === 'connections' ? 700 : 500,
-                  fontSize: '0.875rem',
+                  fontSize: isMobile ? '0.8rem' : '0.875rem',
                   color: activeTab === 'connections' ? 'var(--foreground)' : 'var(--muted-foreground)',
                   marginBottom: '-1px',
                   transition: 'all 0.15s ease'
@@ -401,10 +404,10 @@ function Settings() {
                   background: 'transparent',
                   border: 'none',
                   borderBottom: activeTab === 'security' ? '2px solid var(--primary)' : '2px solid transparent',
-                  padding: '1rem 0.5rem', 
+                  padding: isMobile ? '0.85rem 0.35rem' : '1rem 0.5rem', 
                   borderRadius: 0, 
                   fontWeight: activeTab === 'security' ? 700 : 500,
-                  fontSize: '0.875rem',
+                  fontSize: isMobile ? '0.8rem' : '0.875rem',
                   color: activeTab === 'security' ? 'var(--foreground)' : 'var(--muted-foreground)',
                   marginBottom: '-1px',
                   transition: 'all 0.15s ease'
@@ -419,10 +422,10 @@ function Settings() {
                   background: 'transparent',
                   border: 'none',
                   borderBottom: activeTab === 'notifications' ? '2px solid var(--primary)' : '2px solid transparent',
-                  padding: '1rem 0.5rem', 
+                  padding: isMobile ? '0.85rem 0.35rem' : '1rem 0.5rem', 
                   borderRadius: 0, 
                   fontWeight: activeTab === 'notifications' ? 700 : 500,
-                  fontSize: '0.875rem',
+                  fontSize: isMobile ? '0.8rem' : '0.875rem',
                   color: activeTab === 'notifications' ? 'var(--foreground)' : 'var(--muted-foreground)',
                   marginBottom: '-1px',
                   transition: 'all 0.15s ease'
@@ -438,12 +441,12 @@ function Settings() {
 
             <TabsContent value="profile" className="animate-fade-in" style={{ marginTop: 0 }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-                <div className="card" style={{ padding: '2.5rem', boxShadow: '0 10px 40px rgba(0,0,0,0.03)' }}>
+                <div className="card" style={{ padding: isMobile ? '1.25rem' : '2.5rem', boxShadow: '0 10px 40px rgba(0,0,0,0.03)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '2.5rem' }}>
                     <User className="text-primary" size={24} />
                     <h3 style={{ fontSize: '1.25rem', fontWeight: 800 }}>User Profile</h3>
                   </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2.5rem' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? '1rem' : '2.5rem' }}>
                     <div>
                       <label className="micro-label" style={{ display: 'block', marginBottom: '0.75rem' }}>Full Name</label>
                       <div className="operational-surface" style={{ padding: '1rem 1.25rem', fontSize: '1rem' }}>{user.name}</div>
@@ -455,7 +458,7 @@ function Settings() {
                   </div>
                 </div>
 
-                <div className="card" style={{ padding: '2.5rem' }}>
+                <div className="card" style={{ padding: isMobile ? '1.25rem' : '2.5rem' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
                     <Mail className="text-primary" size={20} />
                     <h3 style={{ fontSize: '1.125rem', fontWeight: 800 }}>Messaging Identity</h3>
@@ -472,11 +475,11 @@ function Settings() {
 
             <TabsContent value="connections" className="animate-fade-in" style={{ marginTop: 0 }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-                <div className="card" style={{ padding: '1.25rem 2rem' }}>
+                <div className="card" style={{ padding: isMobile ? '1rem 1.1rem' : '1.25rem 2rem' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '2rem' }}>
+                    <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'flex-start' : 'center', gap: isMobile ? '1rem' : '2rem', width: '100%' }}>
                       <div className="micro-label">Fleet Health</div>
-                      <div style={{ display: 'flex', gap: '1.5rem' }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem' }}>
                         {PROVIDERS.map(p => {
                           const count = user.connections.filter(c => c.provider === p.id).length
                           const hasError = user.connections.some(c => c.provider === p.id && c.syncStatus === 'Failed')
@@ -493,8 +496,8 @@ function Settings() {
                   </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: '2rem' }}>
-                  <div className="card" style={{ padding: '2rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1.3fr 1fr', gap: '2rem' }}>
+                  <div className="card" style={{ padding: isMobile ? '1.25rem' : '2rem' }}>
                     <h3 style={{ marginBottom: '2rem', fontSize: '1.125rem', fontWeight: 800 }}>Active Fleet Connections</h3>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
                       {user.connections.length === 0 && <div style={{ color: 'var(--muted)', fontSize: '0.875rem', textAlign: 'center', padding: '3rem' }}>No cloud accounts connected.</div>}
@@ -509,7 +512,7 @@ function Settings() {
                     </div>
                   </div>
 
-                  <div className="card" style={{ padding: '2rem' }}>
+                  <div className="card" style={{ padding: isMobile ? '1.25rem' : '2rem' }}>
                     <h3 style={{ marginBottom: '1.5rem', fontSize: '1.125rem', fontWeight: 800 }}>Add Provider</h3>
                     <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '2rem' }}>
                       {PROVIDERS.map(option => (

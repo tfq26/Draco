@@ -1,10 +1,10 @@
 import { createRoute } from '@tanstack/react-router'
 import { Route as rootRoute } from './__root'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { dracoApi, formatCurrencyAmount, getCostSourceColor, getCostSourceLabel, type ResourceActionDefinition, type ResourceActionExecutionResult } from '../lib/api'
+import { dracoApi, formatCurrencyAmount, getCostSourceColor, getCostSourceLabel } from '../lib/api'
 import { CLOUD_SYNC_COOLDOWN_MS, isCloudSyncAllowed, recordCloudSyncAttempt } from '../lib/cloudSyncRateLimit'
-import { useEffect, useMemo, useState } from 'react'
-import { Activity, ArrowUpDown, Box, ChevronDown, ChevronUp, Database, Pause, Play, ReceiptText, RotateCcw, Search, Server, ShieldCheck, Sparkles, Trash2 } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Activity, ArrowUpDown, Box, ChevronDown, ChevronUp, Database, ExternalLink, ReceiptText, Search, Server, ShieldCheck } from 'lucide-react'
 import {
   Drawer,
   DrawerClose,
@@ -14,10 +14,9 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from '../components/ui/drawer'
-import { Spinner } from '../components/ui/spinner'
-
 import { useNavigate } from '@tanstack/react-router'
 import { X } from 'lucide-react'
+import { useIsMobile } from '../hooks/useIsMobile'
 
 type ResourcesSearch = {
   provider?: string
@@ -39,6 +38,7 @@ export const ResourcesRoute = createRoute({
 function Resources() {
   const sentinelSearch = ResourcesRoute.useSearch()
   const navigate = useNavigate()
+  const isMobile = useIsMobile()
   const AUTO_SYNC_INTERVAL_MS = CLOUD_SYNC_COOLDOWN_MS
   const [search, setSearch] = useState(sentinelSearch.search || '')
   const [selectedResourceId, setSelectedResourceId] = useState<string | null>(null)
@@ -46,12 +46,12 @@ function Resources() {
   const [isExcludedSectionVisible, setIsExcludedSectionVisible] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const ITEMS_PER_PAGE = 50
-  const [lastActionResult, setLastActionResult] = useState<ResourceActionExecutionResult | null>(null)
   const [sortConfig, setSortConfig] = useState<{
     field: 'monthlyCost' | 'location' | 'provider' | null;
     direction: 'asc' | 'desc' | null;
   }>({ field: null, direction: null })
   const [hasInitializedAutoSync, setHasInitializedAutoSync] = useState(false)
+  const rowClickTimeoutRef = useRef<number | null>(null)
   const queryClient = useQueryClient()
   const { data: resources } = useQuery({
     queryKey: ['resources'],
@@ -105,19 +105,6 @@ function Resources() {
       ])
     },
   })
-  const executeActionMutation = useMutation({
-    mutationFn: ({ resourceId, action }: { resourceId: string; action: string }) =>
-      dracoApi.resources.executeAction(resourceId, action),
-    onSuccess: async (result, variables) => {
-      setLastActionResult(result)
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['resources'] }),
-        queryClient.invalidateQueries({ queryKey: ['resource-detail', variables.resourceId] }),
-        queryClient.invalidateQueries({ queryKey: ['dashboard-summary'] }),
-      ])
-    },
-  })
-
   const filteredResources = useMemo(() => {
     let items = resources || []
     
@@ -307,9 +294,11 @@ function Resources() {
     [resources, selectedResourceId],
   )
 
-  useEffect(() => {
-    setLastActionResult(null)
-  }, [selectedResourceId])
+  useEffect(() => () => {
+    if (rowClickTimeoutRef.current) {
+      window.clearTimeout(rowClickTimeoutRef.current)
+    }
+  }, [])
 
   useEffect(() => {
     const activeConnectionIds = connections
@@ -402,49 +391,28 @@ function Resources() {
     }
   }
 
-  const getActionIcon = (action: string) => {
-    switch (action.toLowerCase()) {
-      case 'pause':
-        return <Pause size={14} />
-      case 'resume':
-        return <Play size={14} />
-      case 'restart':
-        return <RotateCcw size={14} />
-      case 'delete':
-        return <Trash2 size={14} />
-      default:
-        return <Sparkles size={14} />
+  const openResourcePage = (resourceId: string) =>
+    navigate({ to: '/resources/$resourceId', params: { resourceId } })
+
+  const handleResourceRowClick = (resourceId: string) => {
+    if (rowClickTimeoutRef.current) {
+      window.clearTimeout(rowClickTimeoutRef.current)
     }
+
+    rowClickTimeoutRef.current = window.setTimeout(() => {
+      setSelectedResourceId(resourceId)
+      rowClickTimeoutRef.current = null
+    }, 180)
   }
 
-  const getActionStatusColor = (status?: string) => {
-    switch ((status ?? '').toLowerCase()) {
-      case 'succeeded':
-        return '#34d399'
-      case 'inprogress':
-      case 'pending':
-        return '#fbbf24'
-      case 'failed':
-        return '#f87171'
-      default:
-        return 'var(--muted-foreground)'
-    }
-  }
-
-  const handleExecuteAction = (actionDefinition: ResourceActionDefinition) => {
-    if (!selectedResourceId || !activeResource) {
-      return
+  const handleResourceRowDoubleClick = (resourceId: string) => {
+    if (rowClickTimeoutRef.current) {
+      window.clearTimeout(rowClickTimeoutRef.current)
+      rowClickTimeoutRef.current = null
     }
 
-    if (actionDefinition.isDestructive) {
-      const confirmed = window.confirm(`Delete ${activeResource.name}? Draco will generate Terraform files and execute the ${actionDefinition.action} action against Azure.`)
-      if (!confirmed) {
-        return
-      }
-    }
-
-    setLastActionResult(null)
-    executeActionMutation.mutate({ resourceId: selectedResourceId, action: actionDefinition.action })
+    setSelectedResourceId(null)
+    void openResourcePage(resourceId)
   }
 
   const sortedResources = useMemo(() => {
@@ -512,11 +480,11 @@ function Resources() {
   }, [selectedGroupKey, search, sentinelSearch.provider, sentinelSearch.resourceGroup])
 
   return (
-    <div className="animate-fade-in" style={{ fontFamily: 'Roboto, sans-serif' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '2rem' }}>
+    <div className="animate-fade-in resources-page" style={{ fontFamily: 'Roboto, sans-serif' }}>
+      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'stretch' : 'flex-end', marginBottom: '2rem', gap: isMobile ? '1rem' : 0 }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-            <h2 style={{ fontSize: '1.75rem', fontWeight: 900, letterSpacing: '-0.03em', margin: 0 }}>Cloud Fleet</h2>
+            <h2 style={{ fontSize: isMobile ? '1.1rem' : '1.75rem', fontWeight: 900, letterSpacing: '-0.03em', margin: 0 }}>Cloud Fleet</h2>
             {(sentinelSearch.provider || sentinelSearch.resourceGroup) && (
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 {sentinelSearch.provider && (
@@ -537,7 +505,7 @@ function Resources() {
           <p style={{ color: 'var(--muted)', fontSize: '0.8125rem', marginTop: '0.25rem' }}>Asset inventory and live billing telemetry.</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <div className="premium-glass" style={{ display: 'flex', alignItems: 'center', padding: '0.4rem 0.75rem', gap: '0.5rem', width: '280px', borderRadius: 'var(--radius-md)' }}>
+          <div className="premium-glass" style={{ display: 'flex', alignItems: 'center', padding: '0.4rem 0.75rem', gap: '0.5rem', width: isMobile ? '100%' : '280px', borderRadius: 'var(--radius-md)' }}>
             <Search size={14} color="var(--muted-foreground)" />
             <input
               type="text"
@@ -565,9 +533,9 @@ function Resources() {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '280px 1fr', gap: '2rem', alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '280px 1fr', gap: isMobile ? '1rem' : '2rem', alignItems: 'start' }}>
         {/* Left Sidebar: Group Browser */}
-        <div style={{ position: 'sticky', top: '2rem', display: 'flex', flexDirection: 'column', gap: '1.5rem', maxHeight: 'calc(100vh - 4rem)' }}>
+        <div style={{ position: isMobile ? 'relative' : 'sticky', top: '2rem', display: 'flex', flexDirection: 'column', gap: '1.5rem', maxHeight: isMobile ? 'none' : 'calc(100vh - 4rem)' }}>
           <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
             <div className="micro-label" style={{ marginBottom: '1rem', opacity: 0.5 }}>Account Groups</div>
             <div style={{
@@ -644,23 +612,24 @@ function Resources() {
 
         {/* Right Area: Asset Table */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-          <div style={{ display: 'flex', gap: '1rem' }}>
+          <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '1rem' }}>
             <div className="premium-glass" style={{ flex: 1, padding: '1rem' }}>
               <div className="micro-label" style={{ fontSize: '0.65rem', marginBottom: '0.4rem' }}>Monthly Burn</div>
-              <div style={{ fontSize: '1.5rem', fontWeight: 900 }}>{formatCurrencyAmount(totalMonthlyCost)}</div>
+              <div style={{ fontSize: isMobile ? '0.95rem' : '1.5rem', fontWeight: 900 }}>{formatCurrencyAmount(totalMonthlyCost)}</div>
             </div>
             <div className="premium-glass" style={{ flex: 1, padding: '1rem' }}>
               <div className="micro-label" style={{ fontSize: '0.65rem', marginBottom: '0.4rem' }}>Active Assets</div>
-              <div style={{ fontSize: '1.5rem', fontWeight: 900 }}>{filteredResources.length}</div>
+              <div style={{ fontSize: isMobile ? '0.95rem' : '1.5rem', fontWeight: 900 }}>{filteredResources.length}</div>
             </div>
             <div className="premium-glass" style={{ flex: 1, padding: '1rem' }}>
               <div className="micro-label" style={{ fontSize: '0.65rem', marginBottom: '0.4rem' }}>Environments</div>
-              <div style={{ fontSize: '1.5rem', fontWeight: 900 }}>{providerCount}</div>
+              <div style={{ fontSize: isMobile ? '0.95rem' : '1.5rem', fontWeight: 900 }}>{providerCount}</div>
             </div>
           </div>
 
-          <div className="operational-surface" style={{ overflow: 'hidden', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.8125rem' }}>
+          {!isMobile ? (
+          <div className="operational-surface" style={{ overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)' }}>
+            <table style={{ width: '100%', minWidth: '760px', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.8125rem' }}>
               <thead>
                 <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--border)' }}>
                   <th className="micro-label" style={{ padding: '0.6rem 0.75rem' }}>Asset & Type</th>
@@ -691,11 +660,18 @@ function Resources() {
                       Monthly Cost {renderSortIcon('monthlyCost')}
                     </div>
                   </th>
+                  <th className="micro-label" style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>Open</th>
                 </tr>
               </thead>
               <tbody>
                 {paginatedActualResources.map((resource) => (
-                  <tr key={resource.id} className="operational-row" onClick={() => setSelectedResourceId(resource.id)} style={{ cursor: 'pointer' }}>
+                  <tr
+                    key={resource.id}
+                    className="operational-row"
+                    onClick={() => handleResourceRowClick(resource.id)}
+                    onDoubleClick={() => handleResourceRowDoubleClick(resource.id)}
+                    style={{ cursor: 'pointer' }}
+                  >
                     <td style={{ padding: '0.6rem 0.75rem' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                         <div style={{ color: 'var(--muted-foreground)', flexShrink: 0 }}>{getIcon(resource.type)}</div>
@@ -714,16 +690,86 @@ function Resources() {
                         {formatResourceAmount(resource.monthlyCost, resource.currency)}
                       </div>
                     </td>
+                    <td style={{ padding: '0.6rem 0.75rem', textAlign: 'right' }}>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          void openResourcePage(resource.id)
+                        }}
+                        style={{ padding: '0.45rem 0.7rem', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+                      >
+                        <ExternalLink size={12} />
+                        Open
+                      </button>
+                    </td>
                   </tr>
                 ))}
                 {paginatedActualResources.length === 0 && (
                   <tr>
-                    <td colSpan={4} style={{ padding: '3rem', textAlign: 'center', color: 'var(--muted)' }}>No resources found with identified cost values.</td>
+                    <td colSpan={5} style={{ padding: '3rem', textAlign: 'center', color: 'var(--muted)' }}>No resources found with identified cost values.</td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
+          ) : (
+            <div style={{ display: 'grid', gap: '0.75rem' }}>
+              {paginatedActualResources.map((resource) => (
+                <div
+                  key={resource.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => handleResourceRowClick(resource.id)}
+                  onDoubleClick={() => handleResourceRowDoubleClick(resource.id)}
+                  className="operational-surface"
+                  style={{ padding: '1rem', textAlign: 'left', display: 'grid', gap: '0.85rem' }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      handleResourceRowClick(resource.id)
+                    }
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'flex-start' }}>
+                    <div style={{ display: 'flex', gap: '0.75rem', minWidth: 0 }}>
+                      <div style={{ color: 'var(--muted-foreground)', flexShrink: 0 }}>{getIcon(resource.type)}</div>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 800, wordBreak: 'break-word' }}>{resource.name}</div>
+                        <div style={{ fontSize: '0.72rem', color: 'var(--muted)' }}>{resource.type}</div>
+                      </div>
+                    </div>
+                    <span className="badge" style={{ background: 'rgba(255,255,255,0.05)', fontSize: '0.6rem', padding: '0.1rem 0.4rem' }}>{resource.provider}</span>
+                  </div>
+                  <div style={{ display: 'grid', gap: '0.35rem', color: 'var(--muted-foreground)', fontSize: '0.75rem' }}>
+                    <div>{resource.location}</div>
+                    <div>{resource.resourceGroupName || 'Ungrouped'}</div>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'center' }}>
+                    <div style={{ fontWeight: 900, fontSize: '1rem' }}>{formatResourceAmount(resource.monthlyCost, resource.currency)}</div>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        void openResourcePage(resource.id)
+                      }}
+                      style={{ padding: '0.5rem 0.7rem', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+                    >
+                      <ExternalLink size={12} />
+                      Open
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {paginatedActualResources.length === 0 && (
+                <div className="operational-surface" style={{ padding: '1.2rem', textAlign: 'center', color: 'var(--muted)' }}>
+                  No resources found with identified cost values.
+                </div>
+              )}
+            </div>
+          )}
 
           {totalPages > 1 && (
             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1rem', marginTop: '0.5rem' }}>
@@ -769,7 +815,7 @@ function Resources() {
               </button>
 
               {isExcludedSectionVisible && (
-                <div className="operational-surface" style={{ marginTop: '1rem', overflow: 'hidden', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', opacity: 0.8 }}>
+                <div className="operational-surface" style={{ marginTop: '1rem', overflowX: 'auto', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', opacity: 0.8 }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.8125rem' }}>
                     <thead>
                       <tr style={{ background: 'rgba(255,255,255,0.01)', borderBottom: '1px solid var(--border)' }}>
@@ -777,11 +823,18 @@ function Resources() {
                         <th className="micro-label" style={{ padding: '0.5rem 0.75rem', opacity: 0.4 }}>Provider</th>
                         <th className="micro-label" style={{ padding: '0.5rem 0.75rem', opacity: 0.4 }}>Region</th>
                         <th className="micro-label" style={{ padding: '0.5rem 0.75rem', textAlign: 'right', opacity: 0.4 }}>Estimated Cost</th>
+                        <th className="micro-label" style={{ padding: '0.5rem 0.75rem', textAlign: 'right', opacity: 0.4 }}>Open</th>
                       </tr>
                     </thead>
                     <tbody>
                       {excludedResources.map((resource) => (
-                        <tr key={resource.id} className="operational-row" onClick={() => setSelectedResourceId(resource.id)} style={{ cursor: 'pointer' }}>
+                        <tr
+                          key={resource.id}
+                          className="operational-row"
+                          onClick={() => handleResourceRowClick(resource.id)}
+                          onDoubleClick={() => handleResourceRowDoubleClick(resource.id)}
+                          style={{ cursor: 'pointer' }}
+                        >
                           <td style={{ padding: '0.5rem 0.75rem', opacity: 0.7 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                               <div style={{ color: 'var(--muted-foreground)', flexShrink: 0 }}>{getIcon(resource.type)}</div>
@@ -797,6 +850,20 @@ function Resources() {
                           <td style={{ padding: '0.5rem 0.75rem', color: 'var(--muted-foreground)', opacity: 0.6 }}>{resource.location}</td>
                           <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', opacity: 0.6 }}>
                             <div style={{ fontSize: '0.75rem' }}>{formatResourceAmount(resource.monthlyCost, resource.currency)}</div>
+                          </td>
+                          <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right' }}>
+                            <button
+                              type="button"
+                              className="btn-secondary"
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                void openResourcePage(resource.id)
+                              }}
+                              style={{ padding: '0.4rem 0.65rem', fontSize: '0.72rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+                            >
+                              <ExternalLink size={12} />
+                              Open
+                            </button>
                           </td>
                         </tr>
                       ))}
@@ -850,7 +917,7 @@ function Resources() {
               <>
                 <div className="premium-glass" style={{ padding: '1.25rem' }}>
                   <div className="micro-label" style={{ marginBottom: '0.75rem' }}>Monthly Resource Cost</div>
-                  <div style={{ fontSize: '2rem', fontWeight: 800 }}>
+                  <div style={{ fontSize: isMobile ? '1rem' : '2rem', fontWeight: 800 }}>
                     {formatResourceAmount(activeCost?.amount ?? selectedListResource?.monthlyCost ?? 0, activeCurrency)}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.75rem', color: getCostSourceColor(activeCostSource), fontSize: '0.8125rem' }}>
@@ -868,7 +935,7 @@ function Resources() {
                       <ReceiptText size={16} color="var(--muted)" />
                       <span className="micro-label">Provider Total</span>
                     </div>
-                    <div style={{ fontSize: '1.4rem', fontWeight: 700 }}>
+                    <div style={{ fontSize: isMobile ? '0.95rem' : '1.4rem', fontWeight: 700 }}>
                       {hasLiveDetail
                         ? formatCurrencyAmount(resourceDetail?.costContext?.providerTotal ?? 0, activeCurrency)
                         : 'Live detail unavailable'}
@@ -885,7 +952,7 @@ function Resources() {
                       <Activity size={16} color="var(--muted)" />
                       <span className="micro-label">Resource Group Total</span>
                     </div>
-                    <div style={{ fontSize: '1.4rem', fontWeight: 700 }}>
+                    <div style={{ fontSize: isMobile ? '0.95rem' : '1.4rem', fontWeight: 700 }}>
                       {hasLiveDetail
                         ? formatCurrencyAmount(resourceDetail?.costContext?.resourceGroupTotal ?? 0, activeCurrency)
                         : 'Live detail unavailable'}
@@ -925,176 +992,6 @@ function Resources() {
                   </div>
                 </div>
 
-                <div className="operational-surface" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
-                  <div>
-                    <div className="micro-label" style={{ marginBottom: '0.35rem' }}>Terraform Actions</div>
-                    <div style={{ fontSize: '0.78rem', color: 'var(--muted)' }}>
-                      Generate Terraform-backed action files to operate on this resource.
-                    </div>
-                  </div>
-
-                  {hasLiveDetail && resourceDetail?.availableActions.length ? (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.6rem' }}>
-                      {resourceDetail.availableActions.map((actionDefinition) => (
-                        <button
-                          key={actionDefinition.action}
-                          type="button"
-                          onClick={() => handleExecuteAction(actionDefinition)}
-                          disabled={executeActionMutation.isPending}
-                          style={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: '0.45rem',
-                            padding: '0.65rem 0.8rem',
-                            borderRadius: 'var(--radius-md)',
-                            border: `1px solid ${actionDefinition.isDestructive ? 'rgba(248, 113, 113, 0.45)' : 'var(--border)'}`,
-                            background: actionDefinition.isDestructive ? 'rgba(248, 113, 113, 0.08)' : 'rgba(255,255,255,0.03)',
-                            color: actionDefinition.isDestructive ? '#fecaca' : 'inherit',
-                            cursor: executeActionMutation.isPending ? 'wait' : 'pointer',
-                            opacity: executeActionMutation.isPending ? 0.7 : 1,
-                            fontWeight: 700,
-                            fontSize: '0.78rem',
-                          }}
-                        >
-                          {executeActionMutation.isPending && executeActionMutation.variables?.action === actionDefinition.action ? (
-                            <Spinner size={14} className="text-current" />
-                          ) : (
-                            getActionIcon(actionDefinition.action)
-                          )}
-                          {actionDefinition.label}
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <div style={{ color: 'var(--muted)', fontSize: '0.78rem' }}>
-                      {hasLiveDetail
-                        ? 'No Terraform-backed actions are available for this resource type yet.'
-                        : 'Load live detail to discover supported actions.'}
-                    </div>
-                  )}
-
-                  {executeActionMutation.isPending && (
-                    <div style={{ color: '#fbbf24', fontSize: '0.78rem' }}>
-                      Running {executeActionMutation.variables?.action ?? 'action'} for {activeResource.name}...
-                    </div>
-                  )}
-
-                  {executeActionMutation.isError && (
-                    <div style={{ color: '#f87171', fontSize: '0.78rem' }}>
-                      {(executeActionMutation.error as Error).message}
-                    </div>
-                  )}
-                </div>
-
-                {(lastActionResult || (hasLiveDetail && resourceDetail?.actionAudits.length)) && (
-                  <div className="operational-surface" style={{ padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
-                    <div>
-                      <div className="micro-label" style={{ marginBottom: '0.35rem' }}>Recent Action Runs</div>
-                      <div style={{ fontSize: '0.78rem', color: 'var(--muted)' }}>
-                        Terraform execution history for this resource.
-                      </div>
-                    </div>
-
-                    {lastActionResult && (
-                      <div style={{ border: '1px solid rgba(255,255,255,0.06)', borderRadius: 'var(--radius-md)', padding: '0.85rem', display: 'grid', gap: '0.55rem' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'center' }}>
-                          <div style={{ fontWeight: 700, textTransform: 'capitalize' }}>{lastActionResult.action}</div>
-                          <span
-                            className="badge"
-                            style={{
-                              background: 'rgba(255,255,255,0.04)',
-                              color: getActionStatusColor(lastActionResult.status),
-                              border: `1px solid ${getActionStatusColor(lastActionResult.status)}`,
-                            }}
-                          >
-                            {lastActionResult.status}
-                          </span>
-                        </div>
-                        <div style={{ display: 'grid', gap: '0.35rem', fontSize: '0.75rem', color: 'var(--muted-foreground)' }}>
-                          <div>Terraform workspace: {lastActionResult.workspacePath}</div>
-                          <div>Started: {formatTimestamp(lastActionResult.startedAt)}</div>
-                          <div>Completed: {formatTimestamp(lastActionResult.completedAt)}</div>
-                          {typeof lastActionResult.responseStatusCode === 'number' && (
-                            <div>Azure response: HTTP {lastActionResult.responseStatusCode}</div>
-                          )}
-                        </div>
-                        {(lastActionResult.output || lastActionResult.errorOutput) && (
-                          <pre style={{ margin: 0, padding: '0.75rem', background: 'rgba(0,0,0,0.2)', borderRadius: 'var(--radius-sm)', overflowX: 'auto', fontSize: '0.68rem', whiteSpace: 'pre-wrap', color: 'var(--muted-foreground)' }}>
-                            {(lastActionResult.errorOutput || lastActionResult.output || '').trim()}
-                          </pre>
-                        )}
-                      </div>
-                    )}
-
-                    {hasLiveDetail && !!resourceDetail?.actionAudits.length && (
-                      <div style={{ display: 'grid', gap: '0.6rem' }}>
-                        {resourceDetail.actionAudits.map((audit) => (
-                          <div key={audit.id} style={{ border: '1px solid rgba(255,255,255,0.04)', borderRadius: 'var(--radius-md)', padding: '0.8rem', display: 'grid', gap: '0.35rem' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '1rem', alignItems: 'center' }}>
-                              <div style={{ fontWeight: 700 }}>{audit.actionType}</div>
-                              <span
-                                className="badge"
-                                style={{
-                                  background: 'rgba(255,255,255,0.04)',
-                                  color: getActionStatusColor(audit.status),
-                                  border: `1px solid ${getActionStatusColor(audit.status)}`,
-                                }}
-                              >
-                                {audit.status}
-                              </span>
-                            </div>
-                            {audit.description && (
-                              <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>{audit.description}</div>
-                            )}
-                            <div style={{ fontSize: '0.72rem', color: 'var(--muted-foreground)' }}>
-                              Started {formatTimestamp(audit.createdAt)}
-                              {audit.completedAt ? ` • Completed ${formatTimestamp(audit.completedAt)}` : ''}
-                            </div>
-                            {audit.errorMessage && (
-                              <div style={{ fontSize: '0.72rem', color: '#f87171' }}>{audit.errorMessage}</div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                <div className="grid grid-cols-2" style={{ gap: '1rem' }}>
-                  <div className="operational-surface" style={{ padding: '1rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                      <Sparkles size={16} color="var(--muted)" />
-                      <span className="micro-label">Savings Signals</span>
-                    </div>
-                    <div style={{ fontSize: '1.4rem', fontWeight: 700 }}>
-                      {hasLiveDetail ? (resourceDetail?.recommendations.length ?? 0) : 'Live detail unavailable'}
-                    </div>
-                    <div style={{ color: 'var(--muted)', fontSize: '0.75rem', marginTop: '0.35rem' }}>
-                      {hasLiveDetail && resourceDetail?.recommendations[0]
-                        ? `Top opportunity: ${formatCurrencyAmount(resourceDetail.recommendations[0].potentialSavings, resourceDetail.recommendations[0].currency)}`
-                        : hasLiveDetail
-                          ? 'No optimization recommendations yet'
-                          : 'No live recommendation data was returned'}
-                    </div>
-                  </div>
-
-                  <div className="operational-surface" style={{ padding: '1rem' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-                      <Activity size={16} color="var(--muted)" />
-                      <span className="micro-label">Recent Metrics</span>
-                    </div>
-                    <div style={{ fontSize: '1.4rem', fontWeight: 700 }}>
-                      {hasLiveDetail ? (resourceDetail?.metrics.length ?? 0) : 'Live detail unavailable'}
-                    </div>
-                    <div style={{ color: 'var(--muted)', fontSize: '0.75rem', marginTop: '0.35rem' }}>
-                      {hasLiveDetail && resourceDetail?.metrics[0]
-                        ? `Latest sample: ${formatTimestamp(resourceDetail.metrics[0].timestamp)}`
-                        : hasLiveDetail
-                          ? 'No metric samples captured yet'
-                          : 'No live metric samples were returned'}
-                    </div>
-                  </div>
-                </div>
               </>
             ) : (
               <div className="operational-surface" style={{ padding: '1.25rem', color: 'var(--muted)' }}>
@@ -1104,11 +1001,26 @@ function Resources() {
           </div>
 
           <DrawerFooter style={{ borderTop: '1px solid var(--border)', padding: '1.25rem' }}>
-            <DrawerClose asChild>
-              <button className="btn-secondary" style={{ width: '100%' }}>
-                Close Resource Details
-              </button>
-            </DrawerClose>
+            <div style={{ display: 'grid', gap: '0.75rem', width: '100%' }}>
+              {activeResource && (
+                <button
+                  className="btn-primary"
+                  style={{ width: '100%' }}
+                  onClick={() => {
+                    setSelectedResourceId(null)
+                    void openResourcePage(activeResource.id)
+                  }}
+                >
+                  <ExternalLink size={14} />
+                  Open Full Resource Page
+                </button>
+              )}
+              <DrawerClose asChild>
+                <button className="btn-secondary" style={{ width: '100%' }}>
+                  Close Resource Details
+                </button>
+              </DrawerClose>
+            </div>
           </DrawerFooter>
         </DrawerContent>
       </Drawer>

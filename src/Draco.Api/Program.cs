@@ -60,11 +60,14 @@ builder.Services.AddScoped<IAutonomousInsightService, AutonomousInsightService>(
 builder.Services.AddScoped<IResourceActionService, TerraformResourceActionService>();
 builder.Services.AddScoped<INotificationEvaluationService, NotificationEvaluationService>();
 builder.Services.AddScoped<INotificationRule, BudgetThresholdNotificationRule>();
+builder.Services.AddScoped<INotificationRule, ConnectionHealthNotificationRule>();
+builder.Services.AddScoped<INotificationRule, CostOptimizationNotificationRule>();
 builder.Services.AddScoped<INotificationRule, ComputeResourceNotificationRule>();
 builder.Services.AddScoped<INotificationRule, StorageResourceNotificationRule>();
 builder.Services.AddScoped<INotificationRule, FunctionResourceNotificationRule>();
 builder.Services.AddScoped<WorkflowEventService>();
 builder.Services.AddHostedService<PulseBackgroundScheduler>();
+builder.Services.AddHostedService<NotificationBackgroundService>();
 builder.Services.AddHostedService<WorkflowEventBackgroundService>();
 
 var jwtSecret = builder.Configuration["JWT_SECRET"] ?? "super-secret-dragon-key-2026-draco-sentinel";

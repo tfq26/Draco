@@ -583,16 +583,78 @@ button {
   background: var(--primary);
 }
 
+.mobile-nav-shell {
+  position: fixed;
+  left: 0.75rem;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  z-index: 210;
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+  padding: 0.45rem;
+  border-radius: 1rem;
+  border: 1px solid var(--glass-border);
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.12);
+}
+
+.mobile-nav-item {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.22rem;
+  padding: 0.55rem 0.35rem;
+  text-decoration: none;
+  color: var(--muted-foreground);
+  font-size: 0.66rem;
+  font-weight: 700;
+  border-radius: 0.8rem;
+  transition: all 0.18s ease;
+}
+
+.mobile-nav-item-active {
+  color: var(--foreground);
+  background: rgba(255, 0, 0, 0.08);
+}
+
+.settings-tabs-list::-webkit-scrollbar,
+.resource-tabs-list::-webkit-scrollbar {
+  display: none;
+}
+
 @media (max-width: 768px) {
+  .mobile-nav-shell {
+    display: flex;
+  }
+
+  .dashboard-page .card,
+  .dashboard-page .premium-glass,
+  .resources-page .card,
+  .resources-page .premium-glass,
+  .resource-detail-page .card,
+  .resource-detail-page .premium-glass,
+  .settings-page .card,
+  .settings-page .premium-glass {
+    box-shadow: none;
+  }
+
   .assistant-shell {
     right: 0.75rem;
     left: 0.75rem;
-    bottom: 0.75rem;
+    bottom: 5.25rem;
     align-items: stretch;
   }
 
   .assistant-panel {
     width: 100%;
+    max-height: min(78vh, 640px);
+    border-radius: 1rem;
   }
 
   .assistant-summary-bar {
@@ -600,6 +662,37 @@ button {
   }
 
   .assistant-launcher {
-    align-self: flex-end;
+    width: 100%;
+    justify-content: center;
+    align-self: stretch;
+    padding: 0.9rem 1rem;
+  }
+
+  .assistant-body {
+    padding: 0.75rem 0.85rem 0.6rem;
+  }
+
+  .assistant-composer {
+    padding: 0 0.85rem 0.85rem;
+  }
+
+  .assistant-messages {
+    max-height: 240px;
+  }
+
+  .dashboard-page .operational-surface,
+  .resource-detail-page .operational-surface,
+  .settings-page .operational-surface,
+  .resources-page .operational-surface {
+    font-size: 0.78rem;
+  }
+
+  .resources-page table {
+    min-width: 620px;
+  }
+
+  .settings-page .micro-label,
+  .resource-detail-page .micro-label {
+    letter-spacing: 0.04em;
   }
 }
