@@ -8,6 +8,7 @@ import { ResourcesRoute } from './routes/resources'
 import { ResourceDetailRoute } from './routes/resource-detail'
 import { GovernanceRoute } from './routes/governance'
 import { SettingsRoute } from './routes/settings'
+import { SupportRoute } from './routes/support'
 import { AwsOnboardingRoute } from './routes/aws-onboarding'
 
 const routeTree = rootRoute.addChildren([
@@ -20,6 +21,7 @@ const routeTree = rootRoute.addChildren([
   ResourceDetailRoute,
   GovernanceRoute,
   SettingsRoute,
+  SupportRoute,
   AwsOnboardingRoute
 ])
 

@@ -2,8 +2,11 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Draco.Application.Interfaces;
+using Draco.Application.Models;
 using Draco.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Draco.Api.Endpoints;
 
@@ -24,8 +27,9 @@ public static class MessagingWebhookEndpoints
     private static async Task<IResult> HandleIncomingTwilioMessageAsync(
         HttpRequest request,
         DracoDbContext dbContext,
-        IAutonomousInsightService autonomousInsightService,
         IConfiguration configuration,
+        IServiceScopeFactory scopeFactory,
+        ILoggerFactory loggerFactory,
         CancellationToken cancellationToken)
     {
         var authToken = configuration["Twilio:AuthToken"] ?? configuration["TWILIO_AUTH_TOKEN"];
@@ -55,22 +59,15 @@ public static class MessagingWebhookEndpoints
 
         if (string.IsNullOrWhiteSpace(from) || string.IsNullOrWhiteSpace(body))
         {
-            return TwiML("Thanks, Draco received your message but it was empty.");
+            return TwiML(BuildSupportErrorMessage(SupportErrorCatalog.EmptyMessage));
         }
 
         var user = await ResolveUserAccountAsync(from, dbContext, cancellationToken);
 
         if (user is null)
         {
-            return TwiML("We could not match this number to a Draco user yet.");
+            return TwiML(BuildSupportErrorMessage(SupportErrorCatalog.UnknownUser));
         }
-
-        var commandResult = await MessagingCommandProcessor.ProcessAsync(
-            user.Id,
-            body,
-            dbContext,
-            autonomousInsightService,
-            cancellationToken);
 
         dbContext.WorkflowEvents.Add(new Draco.Domain.Entities.WorkflowEvent
         {
@@ -96,9 +93,9 @@ public static class MessagingWebhookEndpoints
             UserId = user.Id,
             NotificationKey = $"twilio:incoming:{messageSid}",
             Title = "New message received",
-            Message = $"From {from}: {body}{(string.IsNullOrWhiteSpace(commandResult.Summary) ? string.Empty : $" | {commandResult.Summary}")}",
-            Type = commandResult.NotificationType,
-            Severity = commandResult.NotificationSeverity,
+            Message = $"From {from}: {body}",
+            Type = "Info",
+            Severity = "Info",
             CreatedAt = DateTime.UtcNow,
             LastEvaluatedAt = DateTime.UtcNow,
             Category = "Messaging",
@@ -106,12 +103,23 @@ public static class MessagingWebhookEndpoints
             ResourceId = messageSid,
             Service = to,
             SourceRule = "twilio-inbound",
-            Metadata = $"from={from};command={commandResult.CommandName}"
+            Metadata = $"from={from};status=received"
         });
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        return TwiML(commandResult.Reply);
+        _ = Task.Run(async () =>
+        {
+            await ProcessIncomingMessageAsync(
+                user.Id,
+                from,
+                body,
+                messageSid,
+                scopeFactory,
+                loggerFactory);
+        });
+
+        return TwiML("Working on it...");
     }
 
     private static IResult TwiML(string message) =>
@@ -211,6 +219,162 @@ public static class MessagingWebhookEndpoints
         }
 
         return digits.Length >= 11 ? digits : null;
+    }
+
+    private static async Task ProcessIncomingMessageAsync(
+        Guid userId,
+        string from,
+        string body,
+        string messageSid,
+        IServiceScopeFactory scopeFactory,
+        ILoggerFactory loggerFactory)
+    {
+        var logger = loggerFactory.CreateLogger("MessagingWebhookBackground");
+
+        try
+        {
+            using var scope = scopeFactory.CreateScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<DracoDbContext>();
+            var autonomousInsightService = scope.ServiceProvider.GetRequiredService<IAutonomousInsightService>();
+            var messagingService = scope.ServiceProvider.GetRequiredService<IMessagingService>();
+
+            var commandResult = await MessagingCommandProcessor.ProcessAsync(
+                userId,
+                body,
+                dbContext,
+                autonomousInsightService,
+                CancellationToken.None);
+
+            if (string.IsNullOrWhiteSpace(commandResult.Reply))
+            {
+                await LogSupportErrorAsync(
+                    dbContext,
+                    userId,
+                    SupportErrorCatalog.EmptyResponse,
+                    "No response text was generated for the inbound message.",
+                    messageSid,
+                    null,
+                    CancellationToken.None);
+
+                await messagingService.SendWhatsAppMessageAsync(
+                    from,
+                    BuildSupportErrorMessage(SupportErrorCatalog.EmptyResponse),
+                    CancellationToken.None);
+
+                return;
+            }
+
+            var delivered = await messagingService.SendWhatsAppMessageAsync(
+                from,
+                commandResult.Reply.Trim(),
+                CancellationToken.None);
+
+            if (!delivered)
+            {
+                await LogSupportErrorAsync(
+                    dbContext,
+                    userId,
+                    SupportErrorCatalog.DeliveryFailed,
+                    "Twilio rejected or failed the outbound WhatsApp reply.",
+                    messageSid,
+                    JsonSerializer.Serialize(new
+                    {
+                        to = from,
+                        commandResult.CommandName
+                    }),
+                    CancellationToken.None);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Background WhatsApp processing failed for user {UserId}.", userId);
+
+            using var scope = scopeFactory.CreateScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<DracoDbContext>();
+            var messagingService = scope.ServiceProvider.GetRequiredService<IMessagingService>();
+
+            await LogSupportErrorAsync(
+                dbContext,
+                userId,
+                SupportErrorCatalog.GenericProcessingFailure,
+                ex.Message,
+                messageSid,
+                JsonSerializer.Serialize(new
+                {
+                    exception = ex.GetType().FullName,
+                    ex.StackTrace
+                }),
+                CancellationToken.None);
+
+            await messagingService.SendWhatsAppMessageAsync(
+                from,
+                BuildSupportErrorMessage(SupportErrorCatalog.GenericProcessingFailure),
+                CancellationToken.None);
+        }
+    }
+
+    private static async Task LogSupportErrorAsync(
+        DracoDbContext dbContext,
+        Guid userId,
+        string errorCode,
+        string summary,
+        string? correlationId,
+        string? metadata,
+        CancellationToken cancellationToken)
+    {
+        var definition = SupportErrorCatalog.Find(errorCode);
+        var title = definition?.Title ?? errorCode;
+        var eventPayload = JsonSerializer.Serialize(new
+        {
+            errorCode,
+            summary,
+            metadata
+        });
+
+        dbContext.WorkflowEvents.Add(new Draco.Domain.Entities.WorkflowEvent
+        {
+            UserId = userId,
+            Source = "Messaging",
+            EventType = "SupportError",
+            Category = "Support",
+            Severity = "High",
+            Provider = "Twilio",
+            SubscriptionId = string.Empty,
+            Title = $"{title} ({errorCode})",
+            Summary = summary,
+            Status = "Logged",
+            OccurredAt = DateTimeOffset.UtcNow,
+            ReceivedAt = DateTimeOffset.UtcNow,
+            CorrelationId = correlationId,
+            RawPayload = eventPayload,
+            ProcessingError = summary
+        });
+
+        dbContext.SystemNotifications.Add(new Draco.Domain.Entities.SystemNotification
+        {
+            UserId = userId,
+            NotificationKey = $"support-error:{errorCode}:{correlationId ?? Guid.NewGuid().ToString("N")}",
+            Title = $"{title} ({errorCode})",
+            Message = summary,
+            Type = "Error",
+            Severity = "High",
+            CreatedAt = DateTime.UtcNow,
+            LastEvaluatedAt = DateTime.UtcNow,
+            Category = "Support",
+            Provider = "Twilio",
+            ResourceId = correlationId,
+            Service = "Messaging",
+            SourceRule = "support-error",
+            Metadata = eventPayload
+        });
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private static string BuildSupportErrorMessage(string errorCode)
+    {
+        var definition = SupportErrorCatalog.Find(errorCode);
+        return definition?.UserMessage ?? $"There was a problem getting a response. Error code: {errorCode}.";
     }
 }
 

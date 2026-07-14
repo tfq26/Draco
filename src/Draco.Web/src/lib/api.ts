@@ -151,6 +151,33 @@ export interface InsightWorkflowSuggestion {
   canAutoRun: boolean
 }
 
+export interface SupportErrorDefinition {
+  code: string
+  title: string
+  category: string
+  summary: string
+  userMessage: string
+  steps: string[]
+}
+
+export interface SupportErrorLog {
+  id: string
+  eventType: string
+  severity: string
+  title: string
+  summary: string
+  occurredAt: string
+  receivedAt: string
+  correlationId?: string
+  processingError?: string
+  metadata?: string
+}
+
+export interface SupportErrorsResponse {
+  definitions: SupportErrorDefinition[]
+  recentLogs: SupportErrorLog[]
+}
+
 export interface DashboardSummary {
   userId: string
   userName: string
@@ -812,5 +839,8 @@ export const dracoApi = {
   },
   events: {
     list: () => fetchWithAuth<Array<Record<string, unknown>>>('/api/events'),
+  },
+  support: {
+    getErrors: () => fetchWithAuth<SupportErrorsResponse>('/api/support/errors'),
   },
 }

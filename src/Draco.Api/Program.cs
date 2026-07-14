@@ -113,6 +113,7 @@ app.MapResourceEndpoints();
 app.MapTelemetryEndpoints();
 app.MapDashboardEndpoints();
 app.MapEventWorkflowEndpoints();
+app.MapSupportEndpoints();
 app.MapAzureMonitorWebhookEndpoints();
 app.MapMessagingWebhookEndpoints();
 app.MapNotificationEndpoints();

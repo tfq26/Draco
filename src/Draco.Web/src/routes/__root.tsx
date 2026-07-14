@@ -1,6 +1,6 @@
 import { createRootRoute, Link, Outlet, useLocation, useNavigate } from '@tanstack/react-router'
 import { TanStackRouterDevtools } from '@tanstack/router-devtools'
-import { Sun, Moon, Settings, LogOut, ChevronDown, RefreshCcw, Check, LayoutDashboard, Boxes, Shield } from 'lucide-react'
+import { Sun, Moon, Settings, LogOut, ChevronDown, RefreshCcw, Check, LayoutDashboard, Boxes, Shield, LifeBuoy } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import dracoBlack from '../assets/draco-black.svg'
@@ -252,6 +252,24 @@ function RootComponent() {
                     animation: 'fadeIn 0.2s ease forwards',
                   }}>
                     <Link
+                      to="/support"
+                      onClick={() => setIsUserMenuOpen(false)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.75rem',
+                        padding: '0.625rem 0.75rem',
+                        color: 'var(--foreground)',
+                        textDecoration: 'none',
+                        fontSize: '0.8125rem',
+                        fontWeight: 500,
+                        borderRadius: 'var(--radius-md)',
+                      }}
+                      className="nav-link"
+                    >
+                      <LifeBuoy size={14} /> Support
+                    </Link>
+                    <Link
                       to="/settings"
                       onClick={() => setIsUserMenuOpen(false)}
                       style={{
@@ -327,6 +345,10 @@ function RootComponent() {
           <Link to="/settings" className="mobile-nav-item" activeProps={{ className: 'mobile-nav-item mobile-nav-item-active' }}>
             <Settings size={18} />
             <span>Settings</span>
+          </Link>
+          <Link to="/support" className="mobile-nav-item" activeProps={{ className: 'mobile-nav-item mobile-nav-item-active' }}>
+            <LifeBuoy size={18} />
+            <span>Support</span>
           </Link>
         </div>
       )}
